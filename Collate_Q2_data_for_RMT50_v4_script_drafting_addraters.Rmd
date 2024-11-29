@@ -1,0 +1,372 @@
+---
+title: "QTracks_MEM_import_test"
+author: "ASNydam"
+date: "2024-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import Data
+
+This is an R Markdown document. When you click "knit"the script will collate data from all subjects in QuARTS 2 MEM files (from QTracks) and create an Excel file (csv) with all data to use with Analyze RMT 50 script.
+
+
+```{r importRMT echo = FALSE}
+
+# before running this script, you have exported the .mem files from QTRacksP to .csv files via excel
+
+library("readr")
+library("stringr")
+library(data.table)
+library(readxl)
+
+#Tidyverse
+
+# define folder location
+
+list_subj_nums <- c('201','203','204','205') #no 202?
+
+
+setwd("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/AnalysisTest/InitialTest") #on abbey's lab computer
+
+
+# check how many files there are to analyze:
+
+#display total number of files in my_data_files folder
+
+
+# get names of files in the data directory
+
+# temp_folder_str <- "QUARTS-"list_subj_nums[subj_num_count]
+input_folders <- paste0('QUARTS-', paste(list_subj_nums))
+
+  
+source_path <- "C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/AnalysisTest/InitialTest/Q2_Test_Data/"
+setwd("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/AnalysisTest/InitialTest/Q2_Test_Data") #on abbey's lab computer
+
+all_paths <- paste0(source_path, paste(input_folders))
+  
+#Create Dataframe on first subject? or above
+
+Q2_RMT50_extracted <- setNames(data.frame(matrix(ncol = 6, nrow = 0)), c("subj_ID", "Day", "Rater", "Side", "Time", "RMT50"))
+colnames(Q2_RMT50_extracted)<- c("subj_ID", "Day", "Rater","Side", "Time", "RMT50") 
+  
+  # Q2_RMT50_extracted <- data.frame(subj_ID=c('999'),
+  #                                      day=c('BSL Day 1'),
+  #                                      side=c('LCX'),
+  #                                      time=c('AM'),
+  #                                      RMT50=c(99),
+  #                                      stringsAsFactors=FALSE)
+  
+# For the first subject...
+
+for (i in 1:length(all_paths)) {
+ 
+  subj_count <- i
+  
+  # print to command line for debugging
+  sprintf("analyzing data for subj %d of total %d subs", i, length(list_subj_nums))
+    
+  current_path <- all_paths[i]
+
+    # length(list.files(current_path))
+  
+  # Extract only the AM files for now
+  
+  input_files <- list.files(
+    path = current_path, # replace with the directory you want
+    pattern = "QUARTS-2.*\\.MEM", # has "QUARTS-2", followed by 0 or more characters,
+                               
+    full.names = TRUE # include the directory in the result
+  )
+  
+  length(input_files) # check, should be 18 files per person (up to week 5)??
+    
+  # For the first data file
+  
+  setwd(current_path) #chnge for each subj loop
+
+  # extract RMT50
+  # i <- 1 # counter for all the  files
+  
+  for (ii in 1:length(input_files)) {
+  
+  
+      file <- input_files[ii]
+      line_num <- 29 #RMT 50 is in line 29 in ALL FILES?
+      
+      # # Increase the chunk size appropriately - ?do all files have same chunks?
+     chunk_row_start <- c(1, 26) #starts at header row
+     chunk_row_end <- c(15, 34)
+     delims_by_chunk <- c(":","=","=")
+     chunk_names <- c("Header", "RMTs")
+     for (iii in 1:length(chunk_row_start)) {
+        line_num <- 1 
+        col_names = FALSE #trim_ws #skip_empty_rows
+        chunk <- read_delim(
+              file, delims_by_chunk[iii],
+              trim_ws = TRUE,
+              skip = chunk_row_start[iii], #26, #go down to the start, skip 1 for header
+              n_max = chunk_row_end[iii]-chunk_row_start[iii], #size of chunk
+              show_col_types = FALSE, #supressing some error message about spec()
+              # On the first iteration, col_names is TRUE
+              # so the first line "X,Y,Z" is assumed to be the header
+              # On any subsequent iteration, col_names is a character vector
+              # of the actual column names
+              col_names = col_names #updates each loop
+            )
+          # Update `col_names` after the first iteration
+          chunk.col_names <- colnames(chunk)  # Use the first chunk's colnames for the rest
+    
+    # save a new dataframe for that specific variable
+    # print(chunk.colnames)
+         chunk_name <- chunk_names[iii]
+            # chunk_name <- data1$`File:`[chunk_names[iii]] #get the variable name 
+        # assign a name to the chunk
+        assign(chunk_name, chunk) 
+    
+        # Move to the next chunk. Add 1 for the header.
+        chunk_size <- chunk_row_end[i+1] - chunk_row_start[i+1]
+
+      }
+      
+     # get variables of interest from chunks
+     
+      rater_tmp <- Header$X2[14]
+      rmt50_tmp <- RMTs$X2[1]
+      
+      # working - extracts the RMT50 column
+      if (grepl('BSL D', file) == TRUE) { # pattern for baseline filenames
+
+          day_tmp <- substring(file, 122, 127)
+          side_tmp <- substring(file, 129, 131)
+          time_tmp <- substring(file, 133, 134)
+          
+      } else if (grepl('TX D', file) == TRUE) { # pattern for treatement week filenames
+            
+          day_tmp <- substring(file, 122, 127)
+          side_tmp <- substring(file, 128, 130)
+          time_tmp <- substring(file, 132, 133)
+          
+      } else if (grepl('TX WK', file) == TRUE) { # pattern for followup filenames
+          day_tmp <- substring(file, 122, 128)
+          side_tmp <- substring(file, 129, 131)
+          time_tmp <- substring(file, 133, 134)
+          
+      }
+      
+      tmp_row <- c(list_subj_nums[subj_count], day_tmp, rater_tmp, side_tmp, time_tmp, rmt50_tmp)
+      
+      # add that data to a new row in dataframe
+      Q2_RMT50_extracted <- rbind(Q2_RMT50_extracted, tmp_row)
+      
+      # save the dataframe
+      #Q2_RMT50_extracted
+  }
+  
+}
+
+# writing data to csv
+filename <- "QuARTS2-RMT50_collated_4_subs.xls"
+filepath <- sprintf("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/AnalysisTest/InitialTest/%s",filename)
+
+colnames(Q2_RMT50_extracted)<- c("subj_ID", "Day", "Rater","Side", "Time", "RMT50") 
+
+newdf <- data.frame(Q2_RMT50_extracted, stringsAsFactors = TRUE)
+           
+write.csv2(newdf,                   
+           filepath,
+           row.names = FALSE)
+
+
+```
+
+# Below, was used to import whole QuARTS data with all SICI and SICF varioables... worling progress
+
+```{r test import old}
+
+# read in the inividual subjects data files and grab the data into matrices to export into raw SAS file
+file <- 'QTracks MEM Data Import test subject.csv' 
+
+
+# Increase the chunk size appropriately - ?do all files have same chunks?
+chunk_row_start <- c(19, 43, 56, 69, 82) #starts at header row
+chunk_row_end <- c(37, 53, 66, 79, 91)
+
+# need to define chunk starts by searching for headers (nsoft coding)
+
+# Assumption: There is a header on the first line
+# but we don't know what it is.
+col_names <- TRUE
+line_num <- 1 #recalculate start point each loop
+
+#while (TRUE) {
+  for (i in 1:length(chunk_row_start)) {
+    line_num <- chunk_row_start[i]#+1 for header
+    chunk <- read_delim(
+      file, ",",
+      skip = line_num, #go down to the start, skip 1 for header
+      n_max = chunk_row_end[i] - chunk_row_start[i]+1, #size of chunk
+      show_col_types = FALSE, #supressing some error message about spec()
+      # On the first iteration, col_names is TRUE
+      # so the first line "X,Y,Z" is assumed to be the header
+      # On any subsequent iteration, col_names is a character vector
+      # of the actual column names
+      col_names = col_names #updates each loop
+    )
+    
+    #   # If the chunk has now rows, then reached end of file
+    #   if (!nrow(chunk)) {
+    #     break
+    #   }
+    
+    # Update `col_names` after the first iteration
+      chunk.col_names <- colnames(chunk)  # Use the first chunk's colnames for the rest
+    
+    # save a new dataframe for that specific variable
+    #print(chunk.colnames)
+    chunk_name <- data1$`File:`[chunk_row_start[i]-1] #get the variable name 
+    # match it to prespecified outcomes we're looking for:
+    match_name <- str_detect(chunk_name, c("SRF","RMT50", 
+                             "RMT200",          
+                             "RMT1000",
+                             "T-SICI", 
+                             "T-SICF",
+                             "A-SICIvISI\\(rel", 
+                             "A-SICIvISI\\(abs", 
+                             "T-SICIvISI\\(\\%RMT\\)\\(Parallel", #not working with patterns ( right now)
+                             "T-SICIvCS")) 
+                   
+    #chunk_name %<>% .[, str_detect(colnames(.), "some_pattern_here")]
+    new_chunk_names = c("SRF","RMT0", "RMT200", "RMT1000", "TSICI","TSICF", "ASICI_rel","ASICI_abs", "TSICIvISI","TSICIvCS")
+
+    #assign(chunk_name, chunk)
+    assign(new_chunk_names[match_name == TRUE], chunk) 
+
+    # Move to the next chunk. Add 1 for the header.
+    chunk_size <- chunk_row_end[i+1] - chunk_row_start[i+1]
+  }
+
+#} 
+#This creates tibbles for each variable with a new simpler name
+#> # A tibble: 3 x 4
+#>   lineno X     Y     Z    
+#>    <dbl> <chr> <chr> <chr>
+#> 1      1 a     b     c    
+#> 2      2 d     e     f    
+#> 3      3 g     h     i    
+#> # A tibble: 3 x 4
+#> 
+#> 
+
+
+#summary(mem)
+
+# sources: 
+# https://stackoverflow.com/questions/58601150/r-how-can-i-import-a-huge-csv-with-chunks
+# https://stackoverflow.com/questions/65097613/change-string-to-simpler-text-using-str-detect-and-dplyr
+
+# This chunk of code has created 5 separate matrices for the main outcome measures stored in the MEM file
+# Next we will restructure them into the raw SAS output
+
+#install.packages('data.table') 
+library(data.table)
+
+i <- 999
+#ii <- loop through rows
+temp.ID <- i #use loop number?
+temp.group <- data1[[13,2]] #should be "Subject type""
+temp.site <- "tor" #doesn't change
+temp.date <- data1[[3,2]]
+#temp.visit_day <- ??
+#temp.Total_pulses
+temp.Test <- 
+temp.Side_cx <- substr(data1[[10,2]], 4, 4) #check this! L>R
+temp.L_or_R_cx <- substr(data1[[10,2]], 1, 1) #check this! L>R
+temp.Onset_Cx_side <- #where to get this?
+temp.CondStim <- colnames(ASICI_abs[3])
+temp.ISI_ms <- 
+temp.Value <- 
+temp.Diff_percent <- 
+
+#subset(df, state %in% c("CA", "AZ", "PH"))
+#ASICI - 
+  ii <- 1
+temp_row <- list(temp.ID, temp.group, temp.date, "visit day", "total pulse", new_chunk_names[7], "nd", temp.Side_cx, temp.L_or_R_cx, "no", temp.CondStim, ASICI_abs[[ii,1]], ASICI_abs[[ii,2]], substr(ASICI_abs[[ii,3]],5,8))
+# temp_row.colnames <- colnames(file2)
+newdf <- rbind(df,temp_row, stringsAsFactors=FALSE)
+
+# working!!!
+
+# need to add loops and such for subjects and rows of each outcome
+# need to check things with Liane
+# need to try on multiple files!! yay!
+
+
+
+#sources: 
+# https://sparkbyexamples.com/r-programming/r-select-rows-based-on-column-value/
+# options
+# library(tidyverse)
+# df %>% add_row(hello = "hola", goodbye = "ciao")
+# newdf <- rbind(df, de)
+# df = rbind(df,de, stringsAsFactors=FALSE)
+#colnames(mydf)[mydf["Price", ] > 20000]
+
+```
+
+## Making Data frame for QuARTS RAW SICI Data
+
+```{r setup, echo=TRUE}
+
+## Create the exported raw file structure 
+
+#install.packages("readxl")
+library(readxl)
+
+# read the headers - Based on existing raw data sheet from Liane
+file2 <- read_xlsx("COPY_quarts_raw_SAS LP_full with CSP.xlsx",sheet = 1, n_max = 10)
+head(file2, 5) #display the top few rows
+header <- colnames(file2)
+
+#colnames(read.csv2(path)) # alternative, faster
+
+# [1] "ID"            "group"         "Site"          "Date"          "Visit_day"     "Total_pulses" 
+#  [7] "Test"          "Side_cx"       "L_or_R_cx"     "Onset_Cx_side" "CondStim"      "ISI_ms"       
+# [13] "Value"         "Diff_percent" 
+
+# create a new workbook and sheet
+
+
+# using package: # - not working, probably cuz no excel
+
+#install.packages("devtools")
+#devtools::install_github("kassambara/r2excel")
+#library(r2excel)
+# wb <- createWorkbook(type="xlsx")
+# sheet <- createSheet(wb, sheetName = "test1")
+
+df <- as.data.frame(matrix(0, ncol = 14, nrow = 10))
+colnames(df) <- header 
+
+# writing data to csv
+filename <- "C:/Users/tmsla/OneDrive/Documents/Abbey/AnalysisTest/raw_SAS_test1.csv"
+write.csv2(newdf,                   
+           filename,
+           row.names = TRUE)
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
