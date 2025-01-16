@@ -1,0 +1,906 @@
+---
+title: "QTracks_MEM_import_for_SICI"
+author: "ASNydam"
+date: "2024-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is a draft attempt to export data from TMS MEM files (output by QTracks) into an excel file for analysis.
+Using separate scripts to extract RMT50 (see other script), this is for SICI and SICF.
+Other script TBC for other variables...
+
+# File Organization:
+# Data files must be in a folder With a subfolder for each subject:  
+# 1.SourceData
+#  / 201
+#  / 202
+#  / ... 
+# Inside each are 15+ MEM files for each session, for each side, for each d
+
+
+Change Log & Notes
+I had to rename 2 of the 203 files as a quick hack cuz they had TP2 code instead of QP2.
+Can we rename... TP2C40920B and TP2C40920B
+
+
+```{r settings echo = FALSE}
+
+# before running this script, you have exported the .mem files from QTRacksP to .csv files via excel
+
+library("readr")
+library(stringr)
+library(data.table)
+#Tidyverse
+
+# File Organization:
+# Data files must be in a folder With a subfolder for each subject:  
+# 1.SourceData
+#  / 201
+#  / 202
+#  / ... 
+# Inside each are 15+ MEM files for each session, for each side, for each day
+
+# Define subs to extract 
+
+list_subj_nums <- c('201','203','204','205') #no 202?
+
+# set folder location
+setwd("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/QuARTS2_TMS/1.SourceData")
+
+source_path <- "C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/QuARTS2_TMS/1.SourceData"
+
+# input_folders <- paste0('QUARTS-', paste(list_subj_nums))
+
+  input_folders <- list.dirs(
+    path = source_path, # replace with the directory you want
+    full.names = TRUE, # include the directory in the result
+    recursive = FALSE
+  )
+  
+# Create output an R Dataframe structure
+
+Q2_TMS_collated <- setNames(data.frame(matrix(ncol = 15, nrow = 0)), c("ID", "Group", "Site", "Date", "VisitDay", "TotalPulses", "Test", "Side_cx", "L_or_R_cx","Onset_cx", "ConditStim", "ISI_ms", "Value", "Diff_percent"))
+
+colnames(Q2_TMS_collated)<- c("ID", "Group", "Site", "Date", "VisitDay", "Time", "TotalPulses", "Test", "Side_cx", "L_or_R_cx","Onset_cx", "ConditStim", "ISI_ms", "Value", "Diff_percent") 
+        
+# define conditions & default variables
+
+Test_types <- c("TSICI", "RMT200", "RMT200_n", "RMT50", "TSICF", "TSICIvCS", "ASICI_rel", "RMT1000")
+
+Visi_day_types <- c("0_avg_am","0_bsl_1_am","0_bsl_2_am","0_bsl_3_am","0_bsl_1_pm","0_bsl_2_pm","0_bsl_3_pm","2_out_1","2_out_2","2_out_avg","3_fu_1","3_fu_2","3_fu_avg")
+  
+# 
+# Site <- "tor" #always toronto so far
+# Group <- "als" #always ALS so for QuARTS
+
+
+# or 
+# create an R dataframe using the sample files: .csv
+# 
+# data1 <- read_csv('QTracks MEM Data Import test subject.csv',show_col_types = FALSE)
+# head(data1, 20) #display the top few rows
+
+# Index (Key)
+# Visit_day	
+#   0.1	= Baseline D1
+# 	0.2	= Baseline D2
+# 	0.3	= Baseline D3
+# 	0	= Baseline week avg
+# 	1,3,5	= Treatment week: D1, mid week (D2-4), D5
+# 	8,9	= Outcomes D1, D2
+# 	22,23 = FU D1,D2 (FU = followup days)
+# Test	
+#   RMT50	
+# 	RMT200	averaged RMT200
+# 	RMT200_n	n trials averaged
+# 	TSICI	TSICIvISI as %RMT
+# 	TSICF	TSICFvISI as %RMT
+# 	TSICIvCS	TSICIvCS as %RMT
+# 	ASICI_rel	ASICIvISI(rel)
+# 	MRS_GABA	
+# 	MRS_Glu	
+# 	MRS_NAA	
+# 	MRS_GluNAA	
+# n=6 
+#   raw	TSICI	Value in Threshold %MSO
+# 	TSICF	Value in Threshold %MSO
+# 	TSICIvsCS	Value in Threshold %MSO
+# 	ASICI_abs	Value in amplitude peak mV
+
+```
+
+# This section of script collates all the data 
+
+```{r collate_SICI_data echo = TRUE}
+
+# doing as data table, cuz rbind keeps the col names then, but doesnt for dataa.frame??
+# Initialize an empty data frame to store results
+Q2_TMS_collated <- data.table(ID = character(), 
+                                        Group = character(), 
+                                        Site = character(), 
+                                        Date = character(), 
+                                        VisitDay = character(), 
+                                        Time = character(), 
+                                        TotalPulses = numeric(),
+                                        Test = character(), 
+                                        Side_cx = character(), 
+                                        L_or_R_cx = character(), 
+                                        Onset_Cx = character(), 
+                                        CondStim = numeric(),
+                                        ISI_ms = numeric(), 
+                                        Value_MSO = numeric(), 
+                                        Diff_percent = numeric(), 
+                                        stringsAsFactors = FALSE)
+
+        # Initialize an empty data frame to store results
+        Q2_tSICIp_extracted <- data.table(ID = character(), 
+                                        Group = character(), 
+                                        Side_cx = character(), 
+                                        L_or_R_cx = character(), 
+                                        Onset_Cx = character(), 
+                                        VisitDay = character(), 
+                                        CondStim = numeric(),
+                                        ISI_ms = numeric(), 
+                                        Value_MSO = numeric(), 
+                                        Diff_percent = numeric(), 
+                                        stringsAsFactors = FALSE)
+        
+        # # Initialize an empty data frame to store results
+        # Q2_reliability_data <- data.table(ID = character(), 
+        #                                 Group = character(), 
+        #                                 Value_MSO = numeric(), 
+        #                                 Diff_percent = numeric(), 
+        #                                 stringsAsFactors = FALSE)
+        # 
+        # # Initialize an empty data frame to store results
+        # Q2_demographic_data <- data.table(ID = character(), 
+        #                                 Group = character(), 
+        #                                 Side_cx = character(), 
+        #                                 Diff_percent = numeric(), 
+        #                                 stringsAsFactors = FALSE)
+
+# For the first subject...
+
+file_counter <- 0
+        
+for (i in 1:length(all_paths)) {
+ 
+  # i <- 1 # HaCK FOR dEBUGGING
+  
+  subj_count <- i
+  
+  temp.ID <- list_subj_nums[subj_count]
+
+  # print to command line for debugging
+  sprintf("analyzing data for subj %d of total %d subs", i, length(list_subj_nums))
+    
+  current_path <- input_folders[i]
+  
+  setwd(current_path)
+
+    # length(list.files(current_path))
+  
+  # Extract only the AM files for now
+  
+  input_files <- list.files(
+    path = current_path, # replace with the directory you want
+    # pattern = "QUARTS-2.*\\AM.*\\.", # has "QUARTS-2", followed by 0 or more characters,
+    #                            # then "AM", and then nothing else ($)
+    pattern = "QUARTS-2.*\\.MEM", # has "QUARTS-2", followed by 0 or more characters,
+                               # then "AM", and then nothing else ($)
+    full.names = TRUE # include the directory in the result
+  )
+  
+  message <- sprintf("subj %d has %d files to extract", length(list_subj_nums), length(input_files))
+
+  print(message) # should be 40 per person
+
+  # For the first data file
+  # i <- 1 # counter for all the  files
+  
+  for (ii in 1:length(input_files)) {
+   
+    # ii <- 11 # HACK for Debugging
+    
+    
+      file <- input_files[ii]
+      
+      tempdf <- readr::read_delim(file, delim = "\t", show_col_types = FALSE, col_names = FALSE, guess_max = 5)
+      
+      # message <- sprintf("currently extracting file %d of %d name: %s", length(list_subj_nums), length(input_files), input_files[ii])
+      # print(message)
+      file_counter <- file_counter + 1
+
+      # Make a data frame to add vars into
+      
+      temp <- setNames(data.frame(matrix(ncol = 15, nrow = 0)), c("ID", "Group", "Site", "Date", "VisitDay", "Time", "TotalPulses", "Test", "Side_cx", "L_or_R_cx","Onset_cx", "ConditStim", "ISI_ms", "Value", "Diff_percent"))
+          
+      # 0. Get Demographics - TBC
+           
+      # Get frin Source
+
+      # RedCapIndex --> c("QZD_FileName", "Comments") # to use for REDCAP!!!!
+      
+      temp.QZD_FileName <- tempdf[[1,2]]
+      temp.muscle <- tempdf[[13,2]]
+      temp.comments <- tempdf[[16,2]]
+      
+      # terms <- c("Age", "Sex", "Muscle", "Handedness", "Operator", "TMS Coil")
+      temp.group <- tempdf[[14,2]] #should be "Subject type""
+      temp.site <- "tor" #doesn't change
+      temp.date <- tempdf[[4,2]]
+      temp.L_or_R_cx <- substr(tempdf[[11,2]], 1, 1) #check this! L>R
+      temp.handed <- tempdf[[10,2]]
+      temp.operator <- tempdf[[15,2]]
+                              
+      temp.Total_pulses <- NaN # - from source documents, rTMS x 600 x 6 sessions per day (unless noted)
+      temp.Onset_Cx <- NaN # - from source documents, weaker side = Onset Cx (according to Neuro) = S2 (S1 is stronger)
+      temp.Test <- NaN #recoded below
+      
+      # 1. Get Conditions
+      
+      # 1.1 RECODE   sIDE cx FROM LOGICALS
+            
+       temp_char <- substring(tempdf[11, 2], 1, 1)
+      if (!is.na(temp_char) & !is.na(temp.handed)) {
+        if (grepl("^L", temp_char, ignore.case = FALSE) & grepl("^L", temp.handed, ignore.case = FALSE)) {
+          temp.Side_cx <- "d"
+        } else if (grepl("^R", temp_char, ignore.case = FALSE) & grepl("^L", temp.handed, ignore.case = FALSE)) {
+          temp.Side_cx <- "d"
+        } else if ((grepl("^L", temp_char, ignore.case = FALSE) & grepl("^R", temp.handed, ignore.case = FALSE)) || 
+                   (grepl("^R", temp_char, ignore.case = FALSE) & grepl("^L", temp.handed, ignore.case = FALSE))) {
+          temp.Side_cx <- "nd"
+        }
+      } else {
+        temp.Side_cx <- NaN  # Assign NA if values are missing
+      }
+          
+      # 1.2 Get the Visit Day Variable - hard coded for now
+      
+      char_skip <- nchar(current_path)+11+2 # taken from path name, so make sure to change if this changes!!
+      
+      # soft code later using: pattern
+      pattern <- "_([^_]+)_QP2"
+
+      # Apply the regex to extract the matching part
+      extracted_strings <- sapply(input_files, function(input_files) {
+        match <- regmatches(input_files, regexec(pattern, input_files))
+        if (length(match[[1]]) > 1) {
+          return(match[[1]][2]) # Return the first match between underscores
+        } else {
+          return(NA) # Return NA if no match found
+        }
+      })
+
+      # # Display the extracted strings - Debugging
+      # print(extracted_strings)
+
+      # # Display the results
+      result <- data.frame(Filename = input_files, Extracted = extracted_strings, stringsAsFactors = FALSE)
+
+      # recode by removing LCX or RCX part of the name
+      
+      result$Extracted <- result$Extracted %>% str_replace("[A-Z]CX *", "")
+      
+      # Maybe add a check that LCX is same as L_R condition for data integrity
+      
+      # TBC
+      
+
+       # RENAME according to new visit day codes:
+      
+      # Create a mapping of VisitDay prefixes
+      prefix_mapping <- list(
+        "BSL DAY1" = "00_1",
+        "BSL DAY2" = "00_2",
+        "TX D1" = "01",
+        "TX D5" = "01",
+        "TX WK3" = "03",
+        "TX WK5" = "05",
+        "TX WK7" = "07",
+        "TX WK9" = "09",
+        "TX WK12" = "12",
+        "TX WK16" = "16",
+        "TX WK20" = "20",
+        "TX WK24" = "24"
+      )
+      
+      # Add the new variable with modified names
+      
+      result$VisitDay <- sapply(result$Extracted, function(Extracted) {
+        # Find the corresponding prefix based on Extracted
+        prefix <- sapply(names(prefix_mapping), function(key) {
+          if (grepl(key, Extracted)) return(prefix_mapping[[key]])
+          return(NA)
+        })
+        prefix <- na.omit(prefix)
+        # If a prefix is found, concatenate with the Extracted column value
+        if (length(prefix) > 0) {
+          paste0(prefix, "_", Extracted)
+        } else {
+          NA  # Return NA if no matching prefix is found
+        }
+      })
+      
+      temp.visit_day <- result$VisitDay[ii] # doing based on file index
+
+            
+      # 1.3 Get AM/PM variable (not used)
+      # old way - when needing separate conditions
+      # Use this for separate data file for "QuARTS2_TMS_ReliabilityData".csv"
+      
+
+        if (grepl('BSL D', file) == TRUE) { # pattern for baseline filenames
+
+          day_tmp <- substring(file, char_skip, char_skip+2)
+          week_tmp <- substring(file, char_skip+4, char_skip+4+3)
+          time_tmp <- substring(file, char_skip+13, char_skip+13+1)
+          tmp.OnsetCx <- substring(file, char_skip+9, char_skip+9+2) # check this
+          
+      } else if (grepl('TX D', file) == TRUE) { # pattern for treatement week filenames
+            
+          day_tmp <- substring(file, char_skip, char_skip+1)
+          week_tmp <- substring(file, char_skip+3, char_skip+3+1)
+          time_tmp <- substring(file, char_skip+10, char_skip+10+1)
+          tmp.OnsetCx <- substring(file, char_skip+6, char_skip+6+2)
+          
+      } else if (grepl('TX WK', file) == TRUE) { # pattern for followup filenames
+        
+          day_tmp <- substring(file, char_skip, char_skip+1)
+          week_tmp <- substring(file, char_skip+3, char_skip+4+2)
+          time_tmp <- substring(file, char_skip+12, char_skip+12+1)
+          tmp.OnsetCx <- substring(file, char_skip+8, char_skip+8+2)
+          
+      } 
+        else {
+            
+             # print error...
+            print("error - No AM found")
+            
+        }
+          
+      
+
+      # Extract two letters 16 characters before the end of the filename
+      result$times <- sapply(result$Filename, function(x) {
+        if (nchar(x) >= 17) {
+          substr(x, nchar(x) - 16, nchar(x) - 15)
+        } else {
+          NA  # Return NA if the filename is shorter than 16 characters
+        }
+      })
+      
+      time_tmp <- result$times[ii]
+      
+      # 1.4 Get Onset Cx (need to fix later)
+      
+      # - from source documents, weaker side = Onset Cx (according to Neuro) = S2 (S1 WAS USUALLY stronger), 
+      # BUT this could have been inconsistent across sessions
+
+      # Temporary solution - using inference from name of QTracks file
+      # If A = likely S1 = stronger side
+      # If B = Likely S2 = Weaker Side
+      
+      # Add new variable based on the specified conditions
+      result$OnsetCx <- ifelse(grepl("(A\\.MEM|C\\.MEM)$", result$Filename), "No",
+                        ifelse(grepl("(B\\.MEM|D\\.MEM)$", result$Filename), "Yes", NA))
+
+
+      temp.Onset_Cx <- result$OnsetCx[ii] 
+         
+      # check the substring is the same...
+            
+      
+      # 1.5 Get Total Pulses (from a separate demographics sheet made fro source)
+      # TBC
+
+      
+      # ##########################
+      
+      # 2. Get RMT values
+      
+            
+      rmt_table <- data.frame(Term = character(), Value = character(), stringsAsFactors = FALSE)
+
+      # Define the list of terms to search for
+      
+      # TBC - Check it's not getting RMT(1) or RMT(2)...
+      
+      terms <- c("RMT50", "RMT200", "RMT1000")
+      
+      lines <- readLines(file)
+      
+      # Loop through the terms and extract matching rows
+      for (terms in terms) {
+        # Find lines containing the term
+        matching_lines <- grep(paste0("\\b", terms, "\\b"), lines, value = TRUE)
+        
+        for (line in matching_lines) {
+          # Extract the term and value using regular expression
+          match <- regmatches(line, regexec(paste0(terms, "\\s*=\\s*(\\S+)"), line))
+          if (length(match[[1]]) > 1) {
+            # Add to the data frame
+            rmt_table <- rbind(rmt_table, data.frame(Test = terms, Value = match[[1]][2]))
+          }
+        }
+      }
+      
+      # Convert values to numeric if needed
+      rmt_table$Value <- as.numeric(rmt_table$Value)
+
+      # print(result)
+      
+      # # save to the big master data file
+        
+      for (r in 1:3) { 
+        
+          temp.Test <- rmt_table$Test[r]
+          temp.ISI <- NaN
+          temp.Value <- rmt_table$Value[r]
+          temp.DiffPercent <- NaN 
+            
+           new_tms_row <- list(temp.ID, temp.group, temp.site, temp.date, temp.visit_day, time_tmp, temp.Total_pulses, temp.Test, temp.Side_cx, temp.L_or_R_cx, temp.Onset_Cx, temp.CondStim, temp.ISI, temp.Value, temp.DiffPercent)
+          
+                 
+      # Q2_TMS_collated <- setNames(data.frame(matrix(ncol = 14, nrow = 0)), c("ID", "Group", "Site", "Date", "VisitDay", "TotalPulses", "Test", "Side_cx", "L_or_R_cx","Onset_cx", "ConditStim", "ISI_ms", "Value", "Diff_percent"))
+
+           
+       # combine into existing data frame
+          
+        Q2_TMS_collated <- rbind(Q2_TMS_collated, new_tms_row)
+          
+        }
+      
+      # reset all vars
+      
+########################
+      
+        # 3. Get the t-SICI values (deliminated by = sign)
+      
+    patterns <- c("RMT50", 
+        "RMT200",          
+         "RMT1000",# do we want 1 or 4 or average?
+         "T-SICIp", 
+         "T-SICI(70%)1.0ms",
+         "T-SICI(70%)2.5ms",
+         "T-SICI(70%)3.0ms",
+        "!T-SICFvISI(%RMT)(Parallel)") 
+    
+       # SICI - easier version for now
+  
+      lines <- readLines(file)
+      # start_row <- grep("T-SICIp", lines)
+      # 
+      # # Ensure the pattern is found
+      # if (length(start_row) == 0) {
+      #   stop("Pattern 'T-SICIp' not found in the file.")
+      # }
+      # 
+      
+      # # Display the results
+      # print(results)
+
+#               Variable        Value
+# 1           T-SICI(70%)1.0ms  28.6
+# 2           T-SICI(70%)2.5ms   8.3
+# 3           T-SICI(70%)3.0ms  14.1
+# 4             T-SICIp-NCross   5.0
+# 5              T-SICIp-NSkip   0.0
+# 6            T-SICIp-NArtRej   0.0
+# 7           T-SICIp-NArtMiss   0.0
+# 8 3\t200\t70\tLogRegress\t(n    NA
+                    
+      
+      # Part 2: Extract rows related to "(70%)"
+      # Find lines containing "(70%)"
+      isi_lines <- grep("\\(70%\\)", lines, value = TRUE)
+      
+      # Extract ISI values and numeric values
+      isi_data <- do.call(rbind, lapply(isi_lines, function(row) {
+        match <- regmatches(row, regexec("(\\(70%\\))([0-9\\.]+)ms = ([0-9\\.]+)", row))
+        if (length(match[[1]]) == 4) {
+          isi_value <- as.numeric(match[[1]][2])
+          time_ms <- as.numeric(match[[1]][3])
+          variable_value <- as.numeric(match[[1]][4])
+          return(data.frame(ISI_ms = time_ms, Value = variable_value, stringsAsFactors = FALSE))
+        }
+        return(NULL)
+      }))
+
+      isi_table <- data.frame(isi_data)
+      # note this is %MSO values
+      # isi_table$Diff_percent <- NaN #c(0, isi_table$Value) # or replace zero with 100 for %RMT
+      
+      # print("ISI Data:")
+      # print(isi_table)
+      
+      
+      # do I want to make one of these for each subject on each day?
+      
+      
+        temp.CondStim <- 70 # 70 for SICI, 90 for SICF
+        temp.Test <- "tSICIp"
+        
+        for (r in 1:3) { 
+        
+          temp.ISI <- isi_table$ISI_ms[r]
+          temp.Value <- isi_table$Value[r]
+          temp.DiffPercent <- NaN #isi_table$Diff_percent[r] 
+            
+          new_SICI_row <- list(temp.ID, temp.group, temp.Side_cx, temp.L_or_R_cx, temp.Onset_Cx, temp.visit_day, temp.CondStim, temp.ISI, temp.Value, temp.DiffPercent)
+          
+          # combine into existing data frame
+          
+        Q2_tSICIp_extracted <- rbind(Q2_tSICIp_extracted, new_SICI_row)
+          
+        # reformat for the big collated data file'
+        
+        new_tms_row <- list(temp.ID, temp.group, temp.site, temp.date, temp.visit_day, time_tmp, temp.Total_pulses, temp.Test, temp.Side_cx, temp.L_or_R_cx, temp.Onset_Cx, temp.CondStim, temp.ISI, temp.Value, temp.DiffPercent)
+          
+       # combine into existing data frame
+          
+        Q2_TMS_collated <- rbind(Q2_TMS_collated, new_tms_row)
+        
+        }
+        
+        # 4. SICF - TBC
+        
+        # Find lines containing "(90%)" or SICF???
+      
+        
+        # isi_lines <- grep("\\(90%\\)", lines, value = TRUE)
+        # 
+        # # Extract ISI values and numeric values
+        # isi_data <- do.call(rbind, lapply(isi_lines, function(row) {
+        #   match <- regmatches(row, regexec("(\\(70%\\))([0-9\\.]+)ms = ([0-9\\.]+)", row))
+        #   if (length(match[[1]]) == 4) {
+        #     isi_value <- as.numeric(match[[1]][2])
+        #     time_ms <- as.numeric(match[[1]][3])
+        #     variable_value <- as.numeric(match[[1]][4])
+        #     return(data.frame(ISI_ms = time_ms, Value = variable_value, stringsAsFactors = FALSE))
+        #   }
+        #   return(NULL)
+        # }))
+        # 
+        # isi_table <- data.frame(isi_data)
+        #   
+        # temp.CondStim <- 90 # 70 for SICI, 90 for SICF
+        # temp.Test <- "tSICF"
+        # 
+        # for (r in 1:3) { 
+        # 
+        #   temp.ISI <- isi_table$ISI_ms[r]
+        #   temp.Value <- isi_table$Value[r]
+        #   temp.DiffPercent <- NaN #isi_table$Diff_percent[r] 
+        #     
+        #   new_SICI_row <- list(temp.ID, temp.group, temp.Side_cx, temp.L_or_R_cx, temp.Onset_Cx, temp.visit_day, temp.CondStim, temp.ISI, temp.Value, temp.DiffPercent)
+        # 
+        # }
+        
+        
+        
+        # # SICI % RMT
+        # 
+        # lines <- readLines(file)
+        # start_row <- grep("!T-SICIvISI(%RMT)(Parallel)", lines)
+        # 
+        # # Ensure the pattern is found
+        # if (length(start_row) == 0) {
+        #   stop("Pattern 'T-SICIp' not found in the file.")
+        # }
+        # 
+        # # Extract rows starting one line after the identified row
+        # data_rows <- lines[(start_row + 1):(start_row + 4 )]
+        # 
+        # # Initialize an empty data frame to store results
+        # results <- data.frame(Variable = character(), Value = numeric(), stringsAsFactors = FALSE)
+        # 
+        # # Loop through each row and extract variable names and values
+        # for (line in data_rows) {
+        # 
+        #     variable <- line[1] # Get the variable name (left side)
+        #     value <- as.numeric(line[2]) # Get the numeric value (right side)
+        #     
+        #     # Add to results data frame
+        #     results <- rbind(results, data.frame(Variable = variable, Value = value, stringsAsFactors = FALSE))
+        #   
+        # }
+      
+      ########
+      
+        # 5. Get Exploratory Outcomes
+        
+        # AB
+        
+        # SICI vs CS
+        
+        # aSICF
+        
+        # aSICI
+        
+        
+        
+              # new_row <- c(list_subj_nums[subj_count], day_tmp, side_tmp, time_tmp, substring(tempdf[1], 9,13))
+
+      #   
+      # # put this into a row
+      # 
+      #  temp_row <- list(temp.ID, temp.group, temp.site, temp.date, temp.visit_day, temp.totalPulse, temp.Test, temp.Side_cx, temp.L_or_R_cx, temp.Onset_Cx, temp.CondStim, temp.ISI, temp.Value, temp.DiffPercent)
+      #  
+      # # temp
+      # 
+      # # add that data to a new row in dataframe
+      #   
+      #   
+      # Q2_RMT50_extracted <- rbind(Q2_RMT50_extracted, new_row)
+      
+      # # cycle through all the tests:
+      #   for (iii in 1:length(Test_types)) {
+      # 
+      #   # save the dataframe
+      #   #Q2_RMT50_extracted
+      #   
+      #  
+      #   }
+      
+      
+  }
+  
+}
+
+
+# writing data to csv
+# setwd("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/QuARTS2/2.RawData/")
+
+temp_filename <- "QuARTS2_Raw_TMS_extracted_n=%d.csv"
+raw_filename <- sprintf(temp_filename, subj_count)
+raw_filepath <- sprintf("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/QuARTS2_TMS/2.RawData/%s",raw_filename)
+
+
+write.csv(Q2_TMS_collated,                   
+           raw_filepath,
+           row.names = TRUE)
+
+message <- sprintf("Success. Analyzed data of %d subjects with %d files found. See folder 1.RawData/ for excel output file - message from ASN", subj_count, file_counter)
+print(message)
+
+# do same for SICI only file:
+
+# do same for reliability data
+
+
+# do same fr demographics
+# and RedCap DATA
+
+```
+
+```{r notes eval=FALSE}
+
+  patterns <- c("RMT50", 
+        "RMT200",          
+         "RMT1000",# do we want 1 or 4 or average?
+         "T-SICIp", 
+         "!T-SICFvsISI",
+        "!T-SICFvs",
+         "T-SICIvCS(%MSO)") # is this aSICI??
+      
+      # Increase the chunk size appropriately - hard coded - but do all files have same chunks?
+    chunk_row_start <- c(19, 43, 56, 69, 82) #starts at header row
+    chunk_row_end <- c(37, 53, 66, 79, 91)
+
+    paste0("^(", paste(patterns, collapse="|"), ")")
+    
+    # get the selections
+    grepl(paste0("^(", paste(l, collapse="|"), ")"), tempdf$X2)
+    
+    # return only chunks that match:
+    # x[grepl(paste0("^(", paste(l, collapse="|"), ")"), x$NAICS),]
+    
+  for (i in 1:length(chunk_row_start)) {    
+    line_num <- 26 #+1 for header
+    chunk <- read_delim(
+      file, ",",
+      skip = line_num, #go down to the start, skip 1 for header
+      n_max = chunk_row_end[i] - chunk_row_start[i]+1, #size of chunk
+      show_col_types = FALSE, #supressing some error message about spec()
+      # On the first iteration, col_names is TRUE
+      # so the first line "X,Y,Z" is assumed to be the header
+      # On any subsequent iteration, col_names is a character vector
+      # of the actual column names
+      col_names = col_names #updates each loop
+    )
+      
+      line_num <- 29 # hard coded - RMT 50 is in line 29 in ALL FILES??
+      
+      line_num <- 1 
+      col_names = FALSE
+      tempdf2 <- read_delim(
+            file, ",",
+            skip = 26, #go down to the start, skip 1 for header
+            n_max = 1, #size of chunk
+            show_col_types = FALSE, #supressing some error message about spec()
+            # On the first iteration, col_names is TRUE
+            # so the first line "X,Y,Z" is assumed to be the header
+            # On any subsequent iteration, col_names is a character vector
+            # of the actual column names
+            col_names = col_names #updates each loop
+          )
+    
+          # Update `col_names` after the first iteration
+      chunk.col_names <- colnames(chunk)  # Use the first chunk's colnames for the rest
+    
+    # save a new dataframe for that specific variable
+    #print(chunk.colnames)
+    chunk_name <- data1$`File:`[chunk_row_start[i]-1] #get the variable name 
+    # match it to prespecified outcomes we're looking for:
+    match_name <- str_detect(chunk_name, c("SRF","RMT50", 
+                             "RMT200",          
+                             "RMT1000",
+                             "T-SICI", 
+                             "T-SICF",
+                             "A-SICIvISI\\(rel", 
+                             "A-SICIvISI\\(abs", 
+                             "T-SICIvISI\\(\\%RMT\\)\\(Parallel", #not working with patterns ( right now)
+                             "T-SICIvCS")) 
+                   
+    #chunk_name %<>% .[, str_detect(colnames(.), "some_pattern_here")]
+    new_chunk_names = c("SRF","RMT0", "RMT200", "RMT1000", "TSICI","TSICF", "ASICI_rel","ASICI_abs", "TSICIvISI","TSICIvCS")
+
+    #assign(chunk_name, chunk)
+    assign(new_chunk_names[match_name == TRUE], chunk) 
+
+    # Move to the next chunk. Add 1 for the header.
+    chunk_size <- chunk_row_end[i+1] - chunk_row_start[i+1]
+      
+    #This creates tibbles for each variable with a new simpler name
+#> # A tibble: 3 x 4
+#>   lineno X     Y     Z    
+#>    <dbl> <chr> <chr> <chr>
+#> 1      1 a     b     c    
+#> 2      2 d     e     f    
+#> 3      3 g     h     i    
+#> # A tibble: 3 x 4
+#> 
+```
+
+```{r old_import_test eval=FALSE}
+
+# read in the inividual subjects data files and grab the data into matrices to export into raw SAS file
+file <- 'QTracks MEM Data Import test subject.csv' 
+i <- 1
+ii <- 2
+
+all_paths[i]
+file <- input_files[ii]
+
+# Increase the chunk size appropriately - ?do all files have same chunks?
+chunk_row_start <- c(19, 43, 56, 69, 82) #starts at header row
+chunk_row_end <- c(37, 53, 66, 79, 91)
+
+# need to define chunk starts by searching for headers (nsoft coding)
+
+# Assumption: There is a header on the first line
+# but we don't know what it is.
+col_names <- TRUE
+line_num <- 1 #recalculate start point each loop
+
+#while (TRUE) {
+  for (i in 1:length(chunk_row_start)) {
+    line_num <- chunk_row_start[i]#+1 for header
+    chunk <- read_delim(
+      file, ",",
+      skip = line_num, #go down to the start, skip 1 for header
+      n_max = chunk_row_end[i] - chunk_row_start[i]+1, #size of chunk
+      show_col_types = FALSE, #supressing some error message about spec()
+      # On the first iteration, col_names is TRUE
+      # so the first line "X,Y,Z" is assumed to be the header
+      # On any subsequent iteration, col_names is a character vector
+      # of the actual column names
+      col_names = col_names #updates each loop
+    )
+    
+    #   # If the chunk has now rows, then reached end of file
+    #   if (!nrow(chunk)) {
+    #     break
+    #   }
+    
+    # Update `col_names` after the first iteration
+      chunk.col_names <- colnames(chunk)  # Use the first chunk's colnames for the rest
+    
+    # save a new dataframe for that specific variable
+    #print(chunk.colnames)
+    chunk_name <- data1$`File:`[chunk_row_start[i]-1] #get the variable name 
+    # match it to prespecified outcomes we're looking for:
+    match_name <- str_detect(chunk_name, c("SRF","RMT50", 
+                             "RMT200",          
+                             "RMT1000",
+                             "T-SICI", 
+                             "T-SICF",
+                             "A-SICIvISI\\(rel", 
+                             "A-SICIvISI\\(abs", 
+                             "T-SICIvISI\\(\\%RMT\\)\\(Parallel", #not working with patterns ( right now)
+                             "T-SICIvCS")) 
+                   
+    #chunk_name %<>% .[, str_detect(colnames(.), "some_pattern_here")]
+    new_chunk_names = c("SRF","RMT0", "RMT200", "RMT1000", "TSICI","TSICF", "ASICI_rel","ASICI_abs", "TSICIvISI","TSICIvCS")
+
+    #assign(chunk_name, chunk)
+    assign(new_chunk_names[match_name == TRUE], chunk) 
+
+    # Move to the next chunk. Add 1 for the header.
+    chunk_size <- chunk_row_end[i+1] - chunk_row_start[i+1]
+  }
+
+#} 
+#This creates tibbles for each variable with a new simpler name
+#> # A tibble: 3 x 4
+#>   lineno X     Y     Z    
+#>    <dbl> <chr> <chr> <chr>
+#> 1      1 a     b     c    
+#> 2      2 d     e     f    
+#> 3      3 g     h     i    
+#> # A tibble: 3 x 4
+#> 
+#> 
+
+
+#summary(mem)
+
+# sources: 
+# https://stackoverflow.com/questions/58601150/r-how-can-i-import-a-huge-csv-with-chunks
+# https://stackoverflow.com/questions/65097613/change-string-to-simpler-text-using-str-detect-and-dplyr
+
+# This chunk of code has created 5 separate matrices for the main outcome measures stored in the MEM file
+# Next we will restructure them into the raw SAS output
+
+#install.packages('data.table') 
+library(data.table)
+
+i <- 999
+#ii <- loop through rows
+temp.ID <- i #use loop number?
+temp.group <- data1[[13,2]] #should be "Subject type""
+temp.site <- "tor" #doesn't change
+temp.date <- data1[[3,2]]
+#temp.visit_day <- ??
+#temp.Total_pulses
+temp.Test <- 
+temp.Side_cx <- substr(data1[[10,2]], 4, 4) #check this! L>R
+temp.L_or_R_cx <- substr(data1[[10,2]], 1, 1) #check this! L>R
+temp.Onset_Cx_side <- #where to get this?
+temp.CondStim <- colnames(ASICI_abs[3])
+temp.ISI_ms <- 
+temp.Value <- 
+temp.Diff_percent <- 
+
+#subset(df, state %in% c("CA", "AZ", "PH"))
+#ASICI - 
+  ii <- 1
+temp_row <- list(temp.ID, temp.group, temp.date, "visit day", "total pulse", new_chunk_names[7], "nd", temp.Side_cx, temp.L_or_R_cx, "no", temp.CondStim, ASICI_abs[[ii,1]], ASICI_abs[[ii,2]], substr(ASICI_abs[[ii,3]],5,8))
+# temp_row.colnames <- colnames(file2)
+newdf <- rbind(df,temp_row, stringsAsFactors=FALSE)
+
+# working!!!
+
+# need to add loops and such for subjects and rows of each outcome
+# need to check things with Liane
+# need to try on multiple files!! yay!
+
+
+
+#sources: 
+# https://sparkbyexamples.com/r-programming/r-select-rows-based-on-column-value/
+# options
+# library(tidyverse)
+# df %>% add_row(hello = "hola", goodbye = "ciao")
+# newdf <- rbind(df, de)
+# df = rbind(df,de, stringsAsFactors=FALSE)
+#colnames(mydf)[mydf["Price", ] > 20000]
+
+```
