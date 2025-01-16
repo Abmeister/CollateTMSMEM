@@ -1,0 +1,53 @@
+README:
+
+This script is used to export data from TMS MEM files (output by QTracks) into an excel file for analysis.
+Using separate scripts to extract RMT50 (see other script), 
+This is for RMTs, SICI and SICF, demographics and exploratory measures
+Other script used for plotting and analysis variables...
+Input is the MEM files, and an excel file with Demographics taken from source documents.
+
+# File Organization:
+# Data files are MEM files exported from QTracks. 
+# They are copied from the MergedData/MEM to this analysis folder
+# They must be in a folder With a subfolder for each subject:  
+#
+# setwd("C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/QuARTS2_TMS/1.SourceData")
+#
+# Sync / Analysis / QuARTS2_TMS / 
+# 1.SourceData
+#  / 201
+#  / 202
+#  / 203
+#  / ... 
+# 	/ QuARTS-201_TX WK3 ... .mem
+# 	/ QuARTS-201_TX WK3 ... .mem
+# 	/ QuARTS-201_TX WK3 ... .mem
+# 	/ QuARTS-201_TX WK3 ... .mem
+# 	/ QuARTS-201_TX WK3 ... .mem
+#
+# Inside each are 40+ MEM files for each session, for each side, for each day and am/pm
+
+Output
+# The script creates an excel file (.csv and .xls) to use for further analysis, in SAS or R or choice.
+# Raw data folder contains the output, which can be shared on any open source files or RedCap.
+# Output folder contains plots
+# Scripts folder contains scripts and version history
+# The parent folder contains R markdown documents and R project file (which will open to last format for editing)
+
+# Backups
+# A copy of these scripts can be found in 2 places:
+# Abbey (on Sync) = primary working copy
+# GitHub (online) = cloud based backup
+# +
+# Abbey local (on work ASUS laptop) = physical backup 1
+# Abbey USB Harddrive = physical backup 2
+# Abbey-Liane shared folder (on sync) = cloud backup 2
+
+
+Change Log & Notes
+
+1. I had to rename 2 of the 203 files as a quick hack cuz they had TP2 code instead of QP2.
+203 > TP2C40920B and TP2C40920B 
+
+2. Changed this file name to correct error - QP2 - was previourlty missing Q
+QUARTS-205_BSL D2 LCX PM_QP2C41025D.MEM
