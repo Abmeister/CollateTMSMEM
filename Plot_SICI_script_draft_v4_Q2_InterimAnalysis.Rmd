@@ -1,0 +1,377 @@
+---
+title: "QuARTS-2_Results Preview"
+output: pdf_document
+date: "2024-12-02"
+author: "by Abbey S. Nydam"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE) # for debugging so shows errors
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 5)
+# knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 5)
+
+library(shiny)
+library(bslib)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(hrbrthemes)
+library(viridis)
+library(tidyr)
+# install.packages("devtools")
+library("ggpubr")
+
+
+# # Clear memory
+# rm(list = ls()) # clears variables in the environment
+# gc() #clears unused mem
+# rm() #removes all variables
+# Ctrl+Shift+F10 #removes all variables and packages loaded
+
+```
+
+## QuARTS 2 Data - SICI and SICF
+
+### Data Preview
+
+
+```{r data_preview, echo=FALSE}
+
+df1 <- readfile <- read.csv("2.RawData/QuARTS2_Raw_TMS_extracted_n=4.csv", header=TRUE, sep=",", na.strings = c("", "NA", "NaN"), stringsAsFactors = TRUE)
+
+
+# remove unneeded variables
+
+df1 <- df1 %>% 
+  select(-c('X','Group', 'Site','Date', 'TotalPulses', 'Diff_percent')) %>% 
+  mutate(VisitDay = gsub("AY", "", as.character(VisitDay))) %>% 
+  mutate_if(is.character, as.factor)  %>% 
+  arrange(ID, VisitDay)
+
+df1$ID <- as.factor(df1$ID)
+
+# select 1 subject??
+
+# df1 <- df1 %>% filter(ID %in% c('1','3','4','5','6','7','8'))
+
+# Get variables of interest for TSICI data...
+
+df <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+  filter(!Test %in% c('NA')) %>% # odd error?? chech collate MEM
+  # mutate(VisitDay = fct_relevel(VisitDay, "Chinstrap", "Gentoo", "Adelie"), .)
+  select(c('ID','L_or_R_cx', 'Onset_Cx','VisitDay', 'Time','ISI_ms', 'Value_MSO')) %>%      
+  filter(ISI_ms %in% c(2.5, 3)) %>% 
+  arrange(ID, L_or_R_cx, Onset_Cx, VisitDay)
+
+
+head(df,10)
+
+      
+```
+
+## SICI Plot - all data
+```{r plot_SICI, echo=FALSE}
+
+# get the variables for SICI
+
+# Test = TSICI
+# Onset_Cx_side == yes
+# Visi_day
+# Diff_percent
+
+# Make averages for 
+
+# 00_BSL_AM - average across days
+# 00_BSL_AM - average across days
+# 
+
+# Create a new data frame with averages for specific VisitDay values
+averaged_data <- df %>%
+  filter(VisitDay %in% c("00_1_BSL DAY1 AM", "00_2_BSL DAY2 AM", "00_1_BSL DAY1 PM", "00_2_BSL DAY2 PM")) %>%
+  group_by(ID, L_or_R_cx, Onset_Cx, ISI_ms) %>%
+  mutate(
+    VisitDay = case_when(
+      all(c("00_1_BSL_DAY1_AM", "00_2_BSL DAY2 AM") %in% VisitDay) ~ "00_BSL_AM_AVE",
+      all(c("00_1_BSL_DAY1_PM", "00_2_BSL DAY2 PM") %in% VisitDay) ~ "00_BSL_PM_AVE",
+      TRUE ~ VisitDay
+    )
+  ) %>%
+  # Group by the ID and VisitDay to calculate the average of TotalPulses
+  group_by(ID, VisitDay) %>%
+  mutate(Value_MSO = if_else(
+    VisitDay %in% c("00_BSL_AM_AVE", "00_BSL_PM_AVE"),
+    mean(Value_MSO, na.rm = TRUE),
+    Value_MSO
+  )) %>%
+# Ungroup to return to a normal data frame
+  ungroup()
+
+# Append the averaged data back to the original data frame
+df3 <- bind_rows(df, averaged_data)
+
+# View the df2 data frame
+print(df3)
+
+
+# Use the PMs for TXs...
+
+
+
+# ISI is the average of 2.5 and 3???
+
+
+# 
+# plot_group <- function(df, Onset_Cx_side) {
+#   grp_var <- enquo(Onset_Cx_side)
+#   df %>%
+#     count(!! grp_var) %>%
+#     ggplot(aes(x = !!grp_var, y = Diff_percent)) +
+#     geom_col()
+# }
+# 
+# plot_group(df, Onset_Cx_side)
+# plot_group(df, ID)
+# 
+# # import pandas as pd
+# conda_create('r-reticulate', packages = "python=3.13")
+# 
+# library(reticulate)
+# path_to_python <- "C:\Users\AbrahaoLab\anaconda3\Lib\site-packages\spyder\plugins"
+# use_python("C:\Users\AbrahaoLab\anaconda3\Lib\site-packages\spyder\plugins",required = TRUE)
+# 
+# #define index column
+# df.set_index('day', inplace=True)
+# #group data by product and display sales as line chart
+# df.groupby('product')['sales'].plot(legend=True)
+
+
+plot_data <- df %>% 
+  filter(Time %in% c('PM')) %>% # Onset_Cx_side
+  select(c('ID','Onset_Cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%      
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  # filter(Visit_day %in% c('0_avg', '1_tx_day1','1_tx_day3','1_tx_day5','2_out_avg','3_fu_avg')) %>% # Onset_Cx_side
+  group_by(ID, VisitDay, Onset_Cx) %>% #Onset_Cx_side
+  summarise(Ave_Diff = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) 
+
+
+# levels(df$VisitDay)
+
+# plot plot_data <- 
+plot <- plot_data %>% 
+  group_by(ID, VisitDay, Onset_Cx) %>% #Onset_Cx_side
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=VisitDay,y=Ave_Diff, ymin = Ave_Diff-Ave_SD, ymax = Ave_Diff+Ave_SD, group_by = Onset_Cx, colour = Onset_Cx)) +
+  geom_rect(aes(xmin = 2.3, xmax = 2.7, ymin = -Inf, ymax = Inf), 
+            fill = "lightgrey", alpha = 0.05, color = NA) + 
+  geom_line(aes(y = Ave_Diff, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point() +
+  xlab("Day") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("B1", "B2","d1", "d5", "w3", "w5", "w7","w9", "w12","w16","w20","w24")) +
+  scale_y_continuous(breaks=seq(-20,40,by=10)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+
+plot + geom_errorbar(width = 0.2)
+# plot + theme(legend.position = c(0.9, 0.3))
+# 
+# plot + geom_rect(aes(xmin = 2, xmax = 3, ymin = -Inf, ymax = Inf), 
+#             fill = "lightgrey", alpha = 0.2) +  # Highlight area between x = 2 and x = 3
+#   theme_minimal()
+
+
+                    
+
+```
+## SICI plot - interim analysis
+
+
+```{r plot_SICI_Q2, echo=FALSE}
+
+# Make new data for average of baselines!!!
+
+# go back and ermove LX and RX from Visit Day variable
+# 
+# df2 <- df %>% 
+#   select(c('ID','L_or_R_cx', 'VisitDay', 'Time', 'Value_MSO', 'ISI_ms')) %>%      
+#   filter(ISI_ms %in% c(2.5, 3)) %>%
+#   filter(Time %in% c('PM')) %>% # Onset_Cx_side
+#   filter(!VisitDay %in% c('BSL D2 PM','BSL D2 PM')) %>%
+#   group_by(ID, VisitDay, L_or_R_cx) %>% #Onset_Cx_side
+#   summarise(Ave_Diff = ave(Value_MSO),
+#             Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+#   # Ungroup to return to a normal data frame
+#   ungroup()
+
+# New attempt
+
+plot_data <- df %>%
+  filter(Time %in% c("PM")) %>%
+  select(c('ID','Onset_Cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%      
+  filter(ISI_ms %in% c(2.5)) %>%
+  # filter(!VisitDay %in% c('001_BSL D1 PM','001_BSL D2 PM')) %>%
+  group_by(ID, Onset_Cx, VisitDay) %>%
+  dplyr::summarize(Ave_MSO = mean(Value_MSO, na.rm = TRUE), sd_MSO = sd(Value_MSO, na.rm = TRUE)) 
+
+
+  # # filter(VisitDay %in% c("00_1_BSL DAY1 AM", "00_2_BSL DAY2 AM", "00_1_BSL DAY1 PM", "00_2_BSL DAY2 PM")) %>%
+  # summarise(Ave_Diff = ave(Value_MSO),
+  #           Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+  # # Ungroup to return to a normal data frame
+  # ungroup()
+
+
+  # mutate(
+  #   VisitDay = case_when(
+  #     all(c("00_1_BSL_DAY1_AM", "00_2_BSL DAY2 AM") %in% VisitDay) ~ "00_BSL_AM_AVE",
+  #     all(c("00_1_BSL_DAY1_PM", "00_2_BSL DAY2 PM") %in% VisitDay) ~ "00_BSL_PM_AVE",
+  #     TRUE ~ VisitDay
+  #   )
+  # ) %>%
+  # # Group by the ID and VisitDay to calculate the average of TotalPulses
+  # group_by(ID, VisitDay) %>%
+  # mutate(Value_MSO = if_else(
+  #   VisitDay %in% c("00_BSL_AM_AVE", "00_BSL_PM_AVE"),
+  #   mean(Value_MSO, na.rm = TRUE),
+  #   Value_MSO
+  # )) %>%
+  # # Ungroup to return to a normal data frame
+  # ungroup()
+
+  
+# head(df2)
+
+  # filter(Visit_day %in% c('0_avg', '1_tx_day1','1_tx_day3','1_tx_day5','2_out_avg','3_fu_avg')) %>% #
+    
+# plot
+
+plot2 <- plot_data %>% 
+  group_by(ID, VisitDay, Onset_Cx) %>% #Onset_Cx
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=VisitDay,y=Ave_MSO, ymin = Ave_MSO-sd_MSO, ymax = Ave_MSO+sd_MSO, group_by = Onset_Cx, colour = Onset_Cx)) +
+  geom_line(aes(y = Ave_MSO, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point(aes(y = Ave_MSO, group = Onset_Cx, color = Onset_Cx)) +
+  xlab("Day") + ylab("Inhibition (%MSO)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("B_1","B_2","D1", "'D5","W3","W7","W9","W12","W16","W20","W24")) +
+  scale_y_continuous(breaks=seq(-20,30,by=5)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + #theme_classic theme_grey
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+
+plot2 + geom_errorbar(width = 0.2)
+# 
+# plot_data %>% distinct(VisitDay)
+    
+```
+
+## SICI Plot - SAS style 
+
+```{r plot_SICI_LP, echo=FALSE}
+
+df2 <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+  select(c('ID','L_or_R_cx', 'Visit_day', 'Diff_percent', 'ISI_ms')) %>%      
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  filter(Visit_day %in% c('0_avg','2_out_avg','3_fu_avg')) %>% # Onset_Cx_side # make these inline!!
+  group_by(ID, Visit_day, L_or_R_cx) %>% #Onset_Cx_side
+  summarise(Ave_Diff = ave(Diff_percent),
+            Ave_SD = sd(Diff_percent, na.rm = TRUE)) 
+
+# plot
+
+plot2 <- df2 %>% 
+  group_by(ID, Visit_day, L_or_R_cx) %>% #Onset_Cx_side
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=Visit_day,y=Ave_Diff, ymin = Ave_Diff-Ave_SD, ymax = Ave_Diff+Ave_SD, group_by = L_or_R_cx, colour = L_or_R_cx)) +
+  geom_line(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  geom_point(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  xlab("Day") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("B","d8","d22")) +
+  scale_y_continuous(breaks=seq(-20,30,by=5)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + #theme_classic theme_grey
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+
+plot2 + geom_errorbar(width = 0.2)
+
+    
+```
+
+
+### Check to see if plot matches Liane's 
+
+
+```{r indiv_plots_SICI, echo=TRUE}
+
+plot_data <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%      
+  filter(VisitDay %in% c('BSL D1 PM')) %>% # Onset_Cx_side
+  group_by(ID, L_or_R_cx, ISI_ms) %>% #Onset_Cx_side
+  summarise(Ave_Diff = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) 
+
+# plot 
+plot <- plot_data %>% 
+  group_by(ID, ISI_ms, L_or_R_cx) %>% #Onset_Cx_side
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=ISI_ms,y=Ave_Diff, ymin = Ave_Diff-Ave_SD, ymax = Ave_Diff+Ave_SD, group_by = L_or_R_cx, colour = L_or_R_cx)) +
+  geom_line(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  geom_point() +
+  xlab("ISI") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_y_continuous(breaks=seq(-20,100,by=20)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+        
+# plot + geom_errorbar(width = 0.2)
+plot
+
+    
+```
+
+### Questions for Liane:
+
+Which days correspond to day  8 and day 22?
+
+What is the average measures in timeline?
+
+Why am I not getting both sides??
+
+Which subject numbers correspond to which?
+
+
+# SICI Stats - TBC
+
+# SICF Plot - TBC
+
+# SICF Stats - TBC
+
+# RMT - TBC
