@@ -1,0 +1,1632 @@
+---
+title: "SNBR TOF Results Preview"
+output: pdf_document
+date: "2024-12-02"
+author: "by Abbey S. Nydam"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE) # for debugging so shows errors
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 5)
+# knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 5)
+
+library(shiny)
+library(bslib)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(hrbrthemes)
+library(viridis)
+library(tidyr)
+library(readxl)
+
+# install.packages("devtools")
+library("ggpubr")
+
+
+# # Clear memory
+# rm(list = ls()) # clears variables in the environment
+# gc() #clears unused mem
+# rm() #removes all variables
+# Ctrl+Shift+F10 #removes all variables and packages loaded
+
+
+# Next STEPS!!
+# make RMT plot, make Onset Cx the variable (in collate?)
+# other?
+# get new data from Lianre???
+
+```
+
+<!-- ## QuARTS 2 Data - SICI and SICF -->
+
+<!-- ## Before running this script, ensure you have run "collate_mem" to produce the raw excel csv file -->
+
+<!-- using script "collate_MEM_Q2_TMS_v6... -->
+<!-- or using function: -->
+<!-- result <- collate_all(Q2_TMS_collated) -->
+
+### Data Preview
+```{r data_preview, echo=FALSE}
+
+# re-extract data if need be... to update the latest raw data file (*note as for now, this script is using a diff filename for debugging)
+#
+list_subj_nums <- c('039','063','077','093', '098') #ALS SNBR Toferson Patients, should be 5/6 (055 didn't have MEPs)
+
+source_dir <- "C:/Users/AbrahaoLab/Sync/Abrahao Lab/Abbey Analysis/Analysis/Toferson_Analysis/1.SourceData"
+
+# result <- collate_all(list_subj_nums,source_dir)
+
+
+# Import The Raw Data File
+
+df0 <- readfile <- read.csv("2.RawData/Tof_Raw_TMS_extracted_test_n=5.csv", header=TRUE, sep=";", na.strings = c("", "NA", "NaN"), stringsAsFactors = TRUE)
+
+
+hc0 <- readfile <- read.csv("2.RawData/HC_Raw_TMS_extracted_n=28.csv", header=TRUE, sep=";", na.strings = c("", "NA", "NaN"), stringsAsFactors = TRUE)
+
+# Bind the data frames together
+df_combined <- bind_rows(df0, hc0)
+
+# ---------------------------
+# Tidy Up
+# ---------------------------
+
+df1 <- df_combined %>% #df0
+  select(-c('X', 'Site', 'Onset_Cx', 'Diff_percent')) %>%  # remove unneeded variables
+  # mutate(ID = gsub("SNBR-|AA-SNBR-| REGISTRY | ", "", as.character(ID))) %>% # sub 1 had diff filenames, so renaming for consistency
+  # mutate(Group = fct_recode(Group, "1" = "B", "2" = "F1"))
+  mutate(VisitType = fct_relevel(VisitType, "B", "F1")) %>%
+  mutate(Date = as.Date(Date, format="%d/%m/%Y")) %>% # Adjust date format if needed
+  mutate(ISI_ms = gsub(",", ".", as.character(ISI_ms))) %>% # fix this
+  mutate(Value_MSO = as.numeric(gsub(",", ".", as.character(Value_MSO)))) %>% # set as numeric with decimals
+  mutate_if(is.character, as.factor)  %>% # set as factor
+  arrange(ID, VisitType)
+
+df1$ID <- as.factor(df1$ID) # set as factor
+
+df1$ID <- factor(df1$ID, 
+                 levels = levels(df_combined$ID), 
+                 labels = gsub(".*SNBR-(\\d{3}).*", "\\1", levels(df1$ID)))
+      
+# Create a new variable Time
+
+# df1$Visit_Num <- sub("B|F1", "1|2", df1$VisitType)
+
+
+# ----------------------------------------
+# Get Info from Demopgraphic Data (from Redcap) - TBC
+# ----------------------------------------
+
+# re. Onset Location, Date since Diagnosis, other clinical measures
+# e.g., ALSFRS, Upper Score, lower Score, ... other? Ask Liane...
+
+# read in excel file (generated in RedCap)
+
+excel_path <- "2.RawData/QuARTS-2 Demographic Data v1.0.xlsx"  # Update with actual file path
+sheet_name <- "Sheet1"
+
+# Read the Onset_Cx data from the "Demographics" sheet
+demographics_data <- read_excel(excel_path, sheet = sheet_name) %>%
+  select(ID, Onset_cx)  # Ensure the Excel sheet has these columns
+
+# #make new variable in df # Merge with the main dataframe and fill Onset_Cx for all rows per ID
+df1 <- df1 %>%
+  left_join(demographics_data, by = "ID") %>%
+  mutate(Onset_Cx = ifelse(Onset_cx == L_or_R_cx, "Onset_side", "Non_onset_side"))
+  
+
+is_grouped_df(df1) # to check if grouped # ungroup()
+# Print the updated data frame
+print(df1)
+
+# select 1 subject??
+
+# df1 <- df1 %>% filter(ID %in% c('1','3','4','5','6','7','8'))
+
+# # Get variables of interest for TSICI data...
+# 
+# df <- df1 %>% 
+#   filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+#   # filter(!Test %in% c('NA')) %>% # odd error?? check collate MEM
+#   select(c('ID','L_or_R_cx', 'Onset_Cx','VisitDay', 'Time','ISI_ms', 'Value_MSO')) %>%      # '
+#   filter(ISI_ms %in% c(2.5, 3)) %>% #  rationale??
+#   arrange(ID, L_or_R_cx, Onset_Cx, VisitDay, Time)
+
+# Preview data to screen
+
+head(df1,10)
+
+      
+```
+
+## Check for Odd Values
+```{r checking, echo=FALSE}
+
+# ----------------------------------------
+# Check some things...
+# ----------------------------------------
+
+
+max(df_avg$Value_MSO)
+min(df_avg$Value_MSO)
+unique(df1$VisitType)
+unique(df1$ISI_ms)
+unique(df1$Onset_Cx)
+unique(df1$Test)
+unique(df1$CondStim)
+unique(df1$ID)
+
+# Create a summary table
+summary_table <- data.frame(
+  Statistic = c("Mean Value_MSO", "Max Value_MSO", "Min Value_MSO", 
+                "Unique VisitDay", "Unique ISI_ms", "Unique Onset_Cx", 
+                "Unique Test", "Unique CondStim", "Unique ID"),
+  Value = c(mean(df_avg$Value_MSO, na.rm = TRUE), 
+            max(df_avg$Value_MSO, na.rm = TRUE), 
+            min(df_avg$Value_MSO, na.rm = TRUE), 
+            paste(unique(df1$VisitDay), collapse = ", "), 
+            paste(unique(df1$ISI_ms), collapse = ", "), 
+            paste(unique(df1$Onset_Cx), collapse = ", "), 
+            paste(unique(df1$Test), collapse = ", "), 
+            paste(unique(df1$CondStim), collapse = ", "), 
+            paste(unique(df1$ID), collapse = ", "))
+)
+
+# Print summary table
+print(summary_table)
+
+```
+
+## screening Plot - all data
+```{r screening, echo=FALSE}
+
+# Check MSO values are reasonable
+
+# Create the plot
+p <- ggplot(df1, aes(x = Value_MSO, fill = as.factor(VisitDay), color = ID)) +
+  geom_histogram(binwidth = 5, alpha = 0.6, position = "identity") + 
+  facet_grid(. ~ ISI_ms) +  # Facet by ISI_ms (Test Level)
+  scale_fill_viridis_c(option = "C", name = "Visit Day") +  # Continuous shading
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    strip.text = element_text(size = 14, face = "bold")
+  ) +
+  labs(
+    title = "Distribution of Value_MSO Across Test Levels",
+    x = "Value_MSO",
+    y = "Count",
+    color = "ID"
+  )
+
+
+# Create a violin plot with tiny scatter behind it - working but not optimized
+scatter <- ggplot(df_filtered, aes(x = as.factor(ISI_ms), y = Value_MSO, color = as.factor(ID))) +
+  # Violin plot
+  geom_violin(trim = TRUE, alpha = 0.8, size = 0.8) +
+  # Scatter plot behind violin plot with some transparency
+  geom_jitter(aes(color = as.factor(ID)), width = 0.1, height = 0, line_width = 1, alpha = 0.4) +
+  # Adjust color scale
+  scale_color_manual(values = rainbow(length(unique(df_filtered$ID)))) + 
+  # Rescale y-axis (RMT %)
+  scale_y_discrete(
+    breaks = seq(60, 120, by = 2),  # Show only ticks at 60, 70, 80, 90, 100
+    labels = seq(60, 120, by = 2)   # Ensure ticks are displayed as integers
+  ) +
+  # Labels and title
+  labs(
+    title = "Violin Plot of Value_MSO by ID with Tiny Scatter",
+    x = "ISI",
+    y = "RMT %",
+    color = "ID"
+  ) +
+  theme_minimal() + # Clean theme
+  theme(legend.position = "right") # Position the legend
+
+scatter
+
+# # Example Data
+# df_summary <- data.frame(
+#   YYYY = c(2023, 2023, 2024, 2024),
+#   Visits = c(15, 20, 25, 30)
+# )
+
+
+
+```
+
+## SICI Plot - all data
+```{r plot_SICI, echo=FALSE}
+
+# ----------------------------------------
+# Averages Baseline 
+# ----------------------------------------
+
+# new attempt...
+# Compute the average Value_MSO for BSL D1 and BSL D2, keeping other variables
+# df_avg <- df1 %>%
+#   filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+#   select(c('ID','L_or_R_cx', 'Onset_Cx','VisitDay', 'Time','ISI_ms', 'Value_MSO')) %>%      # '
+#   filter(ISI_ms %in% c(2.5, 3)) %>% #  rationale??
+#   mutate(VisitDay = ifelse(grepl("BSL D1|BSL D2", VisitDay), "BSL_Ave", as.character(VisitDay))) %>% # VisitGroup
+#   group_by(ID, Onset_Cx, Time, ISI_ms, VisitDay) %>% #L_or_R_cx
+#   summarise(Value_MSO = mean(Value_MSO, na.rm = TRUE), .groups = "drop") %>% #Average_Value_MSO
+#   arrange(ID, Onset_Cx, Time, ISI_ms)
+
+# Print the result
+print(df_avg)
+
+# Display the final dataframe
+print(df_with_avg)
+
+# kinda working - averages over Days, not AM/PM
+
+
+# ----------------------------------------
+# MAIN PLOT of SICI!!!
+# .............Use the PMs for TXs...
+# ----------------------------------------
+
+# Note that subj 096 had nultiple muscles tested, sso need to folter or display...
+
+# # Separate rows where ID is "096" and Muscle is "FDI"
+# df_selected <- df1 %>%
+#   filter(ID == "096", Muscle == "FDI")
+# 
+# # Keep the rest of the dataframe (excluding the above selection)
+# df_remaining <- df1 %>%
+#   filter(!(ID == "096" & Muscle != "FDI"))  # Keeps ID 096 only for FDI, all others remain
+# 
+# Merge both subsets back together
+# df_final <- bind_rows(df_selected, df_remaining)
+
+# Print the final dataframe
+# print(df_final)
+
+# Plot TOF patients baseline and followup SICI
+
+plot <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Muscle %in% c('FDI')) %>% # Hack, becauase TOF 096 has 2 muscles
+  filter(Group %in% c('TOF')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>% # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  filter(ID %in% c('039', '063', '096')) %>%  
+  mutate(VisitType = fct_relevel(VisitType, "B", "F1"),
+         ID = as.factor(ID)) %>%  # Ensure ID is a factor for faceting
+  select(ID, VisitType, Value_MSO, ISI_ms) %>%  
+  group_by(ISI_ms, ID, VisitType) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop") %>%  # Avoid unnecessary grouping in ggplot
+  ggplot(aes(x = VisitType, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = ISI_ms, color = as.factor(ISI_ms))) +  # Use `group` and ensure color is a factor
+  geom_hline(yintercept = 108, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_hline(yintercept = 112, linetype = "dashed", color = "blue") +  # Add dashed line at y = 108 - 98 for HC data
+  geom_hline(yintercept = 95, linetype = "dashed", color = "red") +  # Add dashed line at y = 108 - 98 for HC data
+  geom_hline(yintercept = 98, linetype = "dashed", color = "red") +  # Add dashed line at y = 108 - 98 for HC data
+  geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  ggtitle("Toferson Patients Inhibition (ref line for HC 95% CI)") +
+  xlab("Time Point") + ylab("SICI (%MSO)") + #Change in Machine Intensity
+  geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  facet_wrap(~ID) +  # Correct use of faceting
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot)
+
+# Save here
+
+
+# Plotting healthy controls SICI averages
+
+# Plot TOF patients baseline and followup SICI
+
+df_filtered <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Group %in% c('Control ')) %>% # fiz this!
+  filter(ISI_ms %in% c(1.5, 2)) %>%  
+  mutate(ID = as.factor(ID)) %>%
+  select(ID, Sex, ISI_ms, Value_MSO)
+
+nrow(df_filtered) # --. 0??? something wrong here
+
+
+table(df_filtered$ID)
+# Remove unused levels from ID if there are any empty levels
+df_filtered$ID <- droplevels(df_filtered$ID)
+
+plot2 <- df_filtered %>%
+  group_by(ID) %>%
+  filter(n() > 0) %>%
+  ggplot(aes(x = Sex, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = interaction(ISI_ms, Sex), color = as.factor(ISI_ms))) +  # Use `interaction()` for grouping
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  xlab("Healthy Controls") + ylab("SICI (%MSO)") + # Change in Machine Intensity
+  geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  facet_wrap(~ID) +  # Correct use of faceting
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+# do another one of these by age!!!
+plot2 <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Group %in% c('Control ')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>%  # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  mutate(ID = as.factor(ID)) %>%  # Ensure ID is a factor for faceting
+  select(ID, Age, ISI_ms, Value_MSO) %>%  
+  group_by(ISI_ms, Age, ID) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop") %>%  # Avoid unnecessary grouping in ggplot
+  ggplot(aes(x = Age, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = ISI_ms, color = as.factor(ISI_ms))) +  
+  # shape = as.factor(Sex) # Use `interaction(ISI_ms, Sex) for grouping
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  xlab("Healthy Controls") + ylab("SICI (%MSO)") + # Change in Machine Intensity
+  geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  # facet_wrap(~ID) +  # Correct use of faceting
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# No need to add geom_errorbar separately, it was already included in ggplot() above.
+# plot2 <- plot2 + geom_errorbar(width = 0.2)  # This line is redundant
+
+# Show the plot
+plot2
+
+
+# INDIV Subs Plot for SICI HC
+
+
+# Filter and prepare the data
+df_filtered <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Group %in% c('Control ')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>% 
+  mutate(ID = as.factor(ID)) %>%  # Ensure ID is a factor for faceting
+  select(ID, Age, Sex, ISI_ms, Value_MSO) %>%  
+  group_by(ISI_ms, Age, Sex, ID) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop")
+
+# Plot 1: Histogram
+histogram_plot <- ggplot(df_filtered, aes(x = Age, fill = as.factor(ISI_ms))) +
+  geom_histogram(binwidth = 2, position = "dodge", color = "black") +  # Create histogram
+  xlab("Age (years)") + 
+  ylab("Age Frequency") +
+  ggtitle("Healthy Control SICI by Age") +
+  scale_fill_brewer(palette = "Set2") +  # Use a muted, colorblind-friendly palette
+  theme_minimal() +  # Use minimal theme for white background
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot 1: Bar Plot
+bar_plot <- ggplot(df_filtered, aes(x = Age, y = Ave_RMT_Change, fill = interaction(Sex, as.factor(ISI_ms)))) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +  # Create bar plot
+  xlab("Age") + 
+  ylab("Average RMT Change") +
+  ggtitle("Healthy Control SICI by Age") +
+  scale_fill_brewer(palette = "Set2") +  # Use a muted, colorblind-friendly palette
+  theme_minimal() +  # Use minimal theme for white background
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
+        legend.title = element_blank(),  # Remove legend title for simplicity
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5))  # Customize title
+
+
+# Plot 2: Box Plot with improved colors and white background
+boxplot_plot <- ggplot(df_filtered, aes(x = as.factor(Sex), y = Ave_RMT_Change, fill = as.factor(ISI_ms))) +
+  geom_boxplot() +  # Create box plot
+  xlab("ISI (ms)") + 
+  ylab("Average RMT Change") + 
+  ggtitle("Healthy Control SICI") +
+  scale_fill_brewer(palette = "Set2") +  # Use a muted, colorblind-friendly palette
+  theme_minimal() +  # Use minimal theme for white background
+  xlab("Sex") + ylab("RMT Change (%MSO)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("Male", "Female")) +
+  # scale_y_continuous(breaks=seq(-20,40,by=10)) +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
+        panel.grid = element_blank(),  # Remove grid lines for a cleaner look
+        legend.title = element_blank())  # Remove legend title for simplicity
+
+# Display the plots
+print(histogram_plot)
+print(bar_plot)
+print(boxplot_plot)
+
+
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+
+# Calculate 95% Confidence Interval
+df_ci <- df_filtered %>%
+  group_by(Sex, ISI_ms) %>%
+  summarise(
+    Mean_RMT_Change = mean(Ave_RMT_Change, na.rm = TRUE),
+    SD_RMT_Change = sd(Ave_RMT_Change, na.rm = TRUE),
+    N = n(),
+    SE = SD_RMT_Change / sqrt(N),  # Standard error
+    CI_Lower = Mean_RMT_Change - qt(0.975, df = N-1) * SE,  # Lower bound of CI
+    CI_Upper = Mean_RMT_Change + qt(0.975, df = N-1) * SE,  # Upper bound of CI
+    .groups = 'drop'
+  )
+
+# View the calculated confidence intervals
+print(df_ci)
+
+# # A tibble: 4 × 8
+#     Sex ISI_ms Mean_RMT_Change SD_RMT_Change     N    SE CI_Lower CI_Upper
+#   <int> <fct>            <dbl>         <dbl> <int> <dbl>    <dbl>    <dbl>
+# 1     1 1.5               102.         11.0     12  3.18     95.1     109.
+# 2     1 2                 104.          7.62    12  2.20     98.8     108.
+# 3     2 1.5               104.         10.7     10  3.39     96.6     112.
+# 4     2 2                 104.         12.2     10  3.87     94.8     112.
+
+
+# Superimpose TOF on HC (add ALS later)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+# Scatter plot data preparation
+scatter_data <- df1 %>%
+  filter(Test %in% c('tSICIp')) %>%
+  filter(Group %in% c('TOF')) %>%
+  filter(Muscle %in% c('FDI')) %>%
+  filter(ISI_ms %in% c(1.5, 2)) %>%
+  mutate(ID = as.factor(ID), Sex = as.factor(Sex)) %>%
+  select(ID, Sex, ISI_ms, Value_MSO) %>%
+  group_by(ISI_ms, Sex, ID) %>%
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop")
+
+# Boxplot data preparation
+boxplot_data <- df_filtered  # Assuming you have this data already prepared
+
+# Now let's create the combined plot
+combined_plot <- ggplot() +
+  
+  # Scatter plot layer
+  geom_point(data = scatter_data, 
+             aes(x = Sex, y = Ave_RMT_Change, 
+                 color = as.factor(ISI_ms)), 
+             position = position_dodge(width = 0.3), 
+             alpha = 0.5) +  # transparent points for layering
+  
+  # Box plot layer
+  geom_boxplot(data = boxplot_data, 
+               aes(x = as.factor(Sex), y = Ave_RMT_Change, fill = as.factor(ISI_ms)), 
+               alpha = 0.4) +  # transparent boxes
+  scale_fill_brewer(palette = "Set2") + # for boxplot colors
+  
+  # Optional: Horizontal dashed line
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +
+  
+  # Labels and styling
+  xlab("Sex") + 
+  ylab("Average RMT Change") +
+  scale_x_discrete(labels = c("Male", "Female")) +
+  scale_y_continuous(breaks = seq(70, 130, by = 10)) +
+  coord_cartesian(xlim = c(0, 3), ylim = c(70, 130)) + # Align axis limits
+  
+  # Final styling
+  theme_minimal() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1), 
+        panel.grid = element_blank(), 
+        legend.title = element_blank())
+
+# Display the combined plot
+print(combined_plot)
+
+# Save your dataframe
+saveRDS(df_filtered, "HC_df_filtered.rds")
+saveRDS(df1, "df1_unfiltered.rds")
+saveRDS(scatter_data, "TOF_df_filtered.rds")
+
+# In the Shiny app, load the dataframe:
+# df1 <- readRDS("df1.rds")
+
+# to share shiny...
+install.packages("rsconnect")
+library(rsconnect)
+
+# Log in to your ShinyApps.io account (create one if you don’t have it already).
+
+# Go back to R - menu - Tools ? Global  options ? ublishing - and copy paste from shiny
+rsconnect::setAccountInfo(name='snbr-dashboard',
+			  token='CE534A3FACB5338EC751F15A1190BF00',
+			  secret='aiPb7DajCo/YVLAtHLOy0NDvMG26rM4O+Y4YPTP6')
+
+
+# Deploy using:
+# rsconnect::deployApp("path_to_your_shiny_app_folder")
+
+# Make sure to include your data (e.g., as an .rds file) within the app folder, and load the data in the app.
+
+# not working
+
+
+library(patchwork)
+
+testplot <- boxplot_plot + scatterplot + plot_layout(ncol = 1)
+coord_cartesian() 
+
+##
+plot3 <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Group %in% c('TOF')) %>% 
+  filter(Muscle %in% c('FDI')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>%  # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  mutate(ID = as.factor(ID), Sex = as.factor(Sex)) %>%  # Ensure ID is a factor for faceting
+  select(ID, Sex, ISI_ms, Value_MSO) %>%  
+  group_by(ISI_ms, Sex, ID) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop") %>%  # Avoid unnecessary grouping in ggplot
+  ggplot(aes(x = Sex, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = ISI_ms, color = as.factor(ISI_ms))) +  
+  # shape = as.factor(Sex) # Use `interaction(ISI_ms, Sex) for grouping
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_point(position = position_dodge(width = 0.3)) +  # Add points with scatter jitter?
+  # geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  xlab("Sex") + ylab("SICI (%MSO)") + # Change in Machine Intensity
+  # geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  scale_x_discrete(labels=c("Male", "Female")) +
+  # facet_wrap(~ID) +  # Correct use of faceting
+  theme_minimal() + #theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# # Plot 2: Box Plot with improved colors and white background
+# boxplot_plot <- ggplot(df_filtered, aes(x = as.factor(Sex), y = Ave_RMT_Change, fill = as.factor(ISI_ms))) +
+#   geom_boxplot() +  # Create box plot
+#   xlab("ISI (ms)") + 
+#   ylab("Average RMT Change") + 
+#   ggtitle("Healthy Control SICI") +
+#   scale_fill_brewer(palette = "Set2") +  # Use a muted, colorblind-friendly palette
+#   theme_minimal() +  # Use minimal theme for white background
+#   xlab("Sex") + ylab("RMT Change (%MSO)") + #Change in Machine Intensity
+#   scale_x_discrete(labels=c("Male", "Female")) +
+#   # scale_y_continuous(breaks=seq(-20,40,by=10)) +
+#   theme(axis.title = element_text(size = 14),
+#         axis.text = element_text(size = 12),
+#         strip.text = element_text(size = 14),
+#         axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
+#         panel.grid = element_blank(),  # Remove grid lines for a cleaner look
+#         legend.title = element_blank())  # Remove legend title for simplicity
+# 
+
+
+
+# do another one of these by age!!!
+
+# OLD
+# do another one of these by age!!!
+plot2 <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(Group %in% c('Control ')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>%  # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  mutate(ID = as.factor(ID)) %>%  # Ensure ID is a factor for faceting
+  select(ID, ISI_ms, Value_MSO) %>%  
+  group_by(ISI_ms, ID) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop") %>%  # Avoid unnecessary grouping in ggplot
+  ggplot(aes(x = 1, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = interaction(ISI_ms), color = as.factor(ISI_ms))) +  # Use `interaction()` for grouping
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  xlab("Healthy Controls") + ylab("SICI (%MSO)") + # Change in Machine Intensity
+  geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  facet_wrap(~ID) +  # Correct use of faceting
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# No need to add geom_errorbar separately, it was already included in ggplot() above.
+# plot2 <- plot2 + geom_errorbar(width = 0.2)  # This line is redundant
+
+# Show the plot
+plot2
+
+
+
+
+# Make Plot for ALS patients (not SOD1)
+
+# Qs - do we have ALS Pts with Baseline and F1??
+# Plopt them seperately for uipper, lower, bulbar
+# how to interperet clinical tests for bulbar?>
+# Calculate 98% CI for ALS vs HC...
+# Do same for SICF...
+
+
+
+# almost read
+
+###########################
+
+# OLD
+
+# doing with all muscles
+
+plot <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% 
+  filter(ISI_ms %in% c(1.5, 2)) %>% # average over 2.5 and 3 or just 2.5? Paper says 3 is best??
+  filter(Muscle == 'FDI') %>% # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  mutate(VisitType = fct_relevel(VisitType, "B", "F1"),
+         ID = as.factor(ID)) %>%  # Ensure ID is a factor for faceting
+  filter(ID %in% c('039', '063', '096')) %>%  
+  select(ID, VisitType, Value_MSO, ISI_ms) %>%  
+  group_by(ISI_ms, ID, VisitType) %>%  
+  summarise(Ave_RMT_Change = mean(Value_MSO, na.rm = TRUE),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE),
+            .groups = "drop") %>%  # Avoid unnecessary grouping in ggplot
+  ggplot(aes(x = VisitType, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, 
+             ymax = Ave_RMT_Change + Ave_SD, 
+             group = ISI_ms, color = as.factor(ISI_ms))) +  # Use `group` and ensure color is a factor
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  geom_pointrange(position = position_dodge(width = 0.3)) +  # Add points with error bars
+  xlab("Time Point") + ylab("SICI (%MSO)") + #Change in Machine Intensity
+  geom_line(position = position_dodge(width = 0.3)) +  # Connect points per ISI_ms
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  facet_wrap(~ID) +  # Correct use of faceting
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot)
+
+## Date Diffs...
+
+# # Sample dataframe (ensure Date is in Date format)
+# test <- TMS_outcomes_collated %>%
+#   mutate(Date = as.Date(Date, format="%d/%m/%Y"))  # Adjust date format if needed
+
+# Calculate difference in days between F1 and B for each ID
+df_diff <- df1 %>%
+  filter(Test %in% c("RMT50")) %>% # hack so it only gets `date per person
+  filter(Muscle %in% c("FDI")) %>% # hack so it only gets `date per person
+  select(ID, VisitType, Date) %>%
+  mutate(ID = as.factor(ID)) %>%
+  filter(VisitType %in% c("B", "F1")) %>%  # Keep only B and F1 visits
+  pivot_wider(names_from = VisitType, values_from = Date)  # Reshape wide format
+
+df_diff <- df_diff %>%
+  mutate(
+    F1 = as.Date(F1, format = "%Y-%m-%d"),
+    B = as.Date(B, format = "%Y-%m-%d")
+  ) %>%
+  mutate(
+    Days_Difference = ifelse(!is.na(F1) & !is.na(B), as.numeric(F1 - B), NA_real_)
+  )
+
+
+# Print table with differences
+print(df_diff)
+
+# # A tibble: 5 × 4
+#   ID    B          F1         Days_Difference
+#   <fct> <date>     <date>               <dbl>
+# 1 039   0023-07-18 0024-01-26             192 **
+# 2 063   0023-12-13 0024-11-01             324 **
+# 3 077   0024-03-28 NA                      NA
+# 4 096   0024-08-06 0025-01-10             157 **
+# 5 098   0024-08-19 NA                      NA
+
+# 
+### old ot working
+plot <- df1 %>% #
+  filter(Test %in% c('tSICIp')) %>% # 
+  mutate(VisitType = fct_relevel(VisitType, "B", "F1")) %>%
+  filter(ID %in% c('039', '063', '096')) %>% # 
+  select(c('ID', 'VisitType', 'Value_MSO', 'ISI_ms')) %>%    # Onset_Cx  or L_or_R_cx
+  # filter(ISI_ms %in% c(2.5)) %>% # average over 2.5 and 3 or just 2.5? Paper says 3 is best?? 
+  # group_by(ISI_ms, ID, VisitType) %>% #Group
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)
+            ) %>%
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  print(head(df1))
+  ggplot(aes(x=VisitType,y=Ave_RMT_Change,
+             ymin = Ave_RMT_Change-Ave_SD, ymax = Ave_RMT_Change+Ave_SD,
+             group = ISI_ms, color = ISI_ms)) +
+  # ggplot(aes(x=VisitType,y=Value_MSO, 
+  #            group_by = ISI_ms, color = ISI_ms)) +
+  # add a horozontal loine for 100
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  # add a line to mark the baseline
+  # geom_rect(aes(xmin = 0.3, xmax = 2.6, ymin = -Inf, ymax = Inf), 
+            # fill = "lightgrey", alpha = 0.06, color = NA) + 
+  geom_line(aes(y = Value_MSO, group = ISI_ms, color = ISI_ms)) +
+  geom_point() +
+  # annotate("text", x = 1.5, y = 140, label = "Baseline", size = 5) +  # Add text at (1.5, 140)
+  xlab("Time Point") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  # scale_x_discrete(labels=c("B1", "B2","d1", "d5", "w3", "w5", "w7","w9", "w12","w16","w20","w24")) +
+  # scale_y_continuous(breaks=seq(-20,40,by=10)) +
+  scale_y_continuous(breaks=seq(80,140,by=10)) +
+  facet_wrap(ID) + #facet_wrap( ~ ID)
+  theme_grey() + # theme_classic2 # theme_grey
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot <- plot + geom_errorbar(width = 0.2)
+
+  #   # Add text annotation above the legend
+  # annotate("text", 
+  #          x = 2.5, y = max(df_avg$Value_MSO) + 5,  # Positioning text above legend
+  #          label = "Characteristics\n201 --> L onset, LL\n202 --> NA R onset, Bulbar\n203 --> R onset, UL\n204 --> L onset, UL\n205 --> L onset, UL", 
+  #          hjust = 0, vjust = 1, 
+  #          size = 5, color = "black")  +
+    
+# STYLE OPTIONS
+# plot + theme(legend.position = c(0.9, 0.3))
+# 
+# plot + geom_rect(aes(xmin = 2, xmax = 3, ymin = -Inf, ymax = Inf), 
+#             fill = "lightgrey", alpha = 0.2) +  # Highlight area between x = 2 and x = 3
+#   theme_minimal()
+
+
+# Create the OUTPUT directory if it doesn't exist
+if (!dir.exists("4.Output")) {
+  dir.create("4.Output")
+}
+
+
+# Save as PDF (Portrait)
+ggsave("4.Output/Q2_tSICI_2.5_aveBsl.pdf", plot = plot, width = 11, height = 8, units = "in")
+
+# Save as PNG
+ggsave("4.Output/Q2_tSICI_2.5_aveBsl.png", plot = plot, width = 10, height = 8, dpi = 300)
+
+
+
+# ----------------------------------------
+# Run MCD test....
+# ----------------------------------------
+
+# Minimal Detectable Change (MDC) is typically calculated using a formula that incorporates the standard error of measurement (SEM) and the reliability of the measurement tool.
+# Need the ICC for variability of the measure (SICI)
+
+# Conclusion:
+# Per individual MDC is often recommended for more precise and personalized insights, as it takes into account the individual's variability and measurement reliability.
+# Group-level MDC is appropriate if you are looking for a general estimate of MDC for the entire sample, but it can be less informative when individual differences matter.
+
+
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+
+# Step 1: Calculate standard deviation of MSO values for each individual (ID) and VisitDay
+# We assume each subject has repeated measures (10 visits in total), and we calculate the SD for these measures.
+sd_by_individual <- df1 %>%
+  group_by(ID, VisitDay) %>%
+  summarise(
+    SD = sd(Value_MSO, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  )
+
+# Step 2: Calculate SEM for each individual (assuming r = 1 for simplicity)
+# Since you don't have reliability values (like ICC), SEM is simply SD / sqrt(n)
+sd_by_individual <- sd_by_individual %>%
+  mutate(
+    SEM = SD / sqrt(n)
+  )
+
+# Step 3: Calculate MDC for each individual (for a 95% confidence level, Z = 1.96)
+sd_by_individual <- sd_by_individual %>%
+  mutate(
+    MDC = 1.96 * SEM
+  )
+
+# View the final output with MDC for each individual and visit day
+print(sd_by_individual)
+
+# Doing now for Baseline AM and PM...
+
+# Step 1: Subset the data for BSL D1 and BSL D2 only
+df_bsl <- df1[df$VisitDay %in% c("BSL D1", "BSL D2"), ]
+
+# Step 2: Calculate the within-subject standard deviation for each ID
+df_bsl_summary <- df %>%
+  filter(ISI_ms %in% c(2.5)) %>%
+  filter(VisitDay %in% c("BSL D1", "BSL D2")) %>%
+  select(c('ID', 'Onset_Cx', 'VisitDay', 'Time', 'Value_MSO', 'ISI_ms')) %>%
+  group_by(ID, Onset_Cx) %>% # should we average acros ISI?? # do seperately for OnsetCx?
+  summarize(
+    sd_within_subject = sd(Value_MSO),  # standard deviation within subject
+    n = n()  # count the number of observations per subject (should be 2 for BSL D1 and BSL D2)
+  )
+
+# Step 3: Calculate the SEM for each individual (assuming ICC ~ 1 for simplicity)
+df_bsl_summary <- df_bsl_summary %>%
+  mutate(
+    SEM = sd_within_subject / sqrt(n)  # Standard error of measurement
+  )
+
+# Step 4: Calculate the MDC for each individual
+z_value <- 1.96  # for 95% confidence level
+df_bsl_summary <- df_bsl_summary %>%
+  mutate(
+    MDC = z_value * SEM  # Calculate MDC
+  )
+
+# Display the results
+df_bsl_summary
+
+#   ID    Onset_Cx sd_within_subject     n   SEM   MDC
+#   <fct> <lgl>                <dbl> <int> <dbl> <dbl>
+# 1 201   NA                    9.14     3  5.28 10.3 
+# 2 202   NA                   11.1      4  5.56 10.9 
+# 3 203   NA                    8.77     3  5.06  9.92
+# 4 204   NA                    4.34     3  2.51  4.91
+# 5 205   NA                    7.52     4  3.76  7.37
+# 
+# ADD TO PLOT...
+
+
+# Assuming sd_by_individual is already calculated and includes MDC, we'll proceed with the plotting
+
+# Merge the MDC data with the df_avg  data (on ID and VisitDay)
+plot_data <- df1 %>% # df_avg
+  filter(Time %in% c('PM')) %>%
+  select(c('ID', 'Onset_Cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%
+  filter(ISI_ms %in% c(2.5)) %>%
+  group_by(ISI_ms, ID, VisitDay, Onset_Cx) %>%
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+  ungroup()
+
+# Merge the MDC calculated earlier into plot data
+plot_data <- plot_data %>%
+  left_join(df_bsl_summary %>% select(ID, VisitDay, MDC, SEM), by = c("ID", "VisitDay"))
+
+# Create the plot
+plot <- plot_data %>%
+  ggplot(aes(x = VisitDay, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, ymax = Ave_RMT_Change + Ave_SD, 
+             group = Onset_Cx, color = Onset_Cx)) +
+  
+  # Add grey rectangle for SEM range
+  geom_rect(aes(xmin = as.numeric(VisitDay) - 0.4, xmax = as.numeric(VisitDay) + 0.4,
+                ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+            fill = "grey", alpha = 0.3) +
+  
+  # Plot the average change as a line
+  geom_line(aes(y = Ave_RMT_Change, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point() +
+  
+  # Plot error bars for standard deviation
+  # geom_errorbar(width = 0.2) +
+  
+  # # Plot error bars for MDC
+  # geom_errorbar(aes(ymin = Ave_RMT_Change - MDC, ymax = Ave_RMT_Change + MDC), 
+  #               width = 0.3, color = "red", linetype = "dashed") +
+  
+  # Axis labels
+  xlab("Day") + ylab("Inhibition (%)") +
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  
+  # Facet by ID
+  facet_wrap(~ ID) +
+  
+  # Theme adjustments
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Print the plot
+print(plot)
+
+
+
+# Old plot
+# Assuming df_avg is your data frame and df contains the calculated MDC values per individual
+
+# Merge the MDC data with the df_avg  data (on ID and VisitDay)
+plot_data <- df1 %>% # df_avg
+  filter(Time %in% c('PM')) %>%
+  select(c('ID', 'Onset_Cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%
+  filter(ISI_ms %in% c(2.5)) %>%
+  group_by(ISI_ms, ID, VisitDay, Onset_Cx) %>%
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+  ungroup()
+
+# Merging MDC calculated earlier into plot data
+plot_data <- plot_data %>%
+  left_join(sd_by_individual %>% select(ID, VisitDay, MDC), by = c("ID", "VisitDay"))
+
+# Create the plot
+plot <- plot_data %>%
+  ggplot(aes(x = VisitDay, y = Ave_RMT_Change, 
+             ymin = Ave_RMT_Change - Ave_SD, ymax = Ave_RMT_Change + Ave_SD, 
+             group = Onset_Cx, color = Onset_Cx)) +
+  geom_line(aes(y = Ave_RMT_Change, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point() +
+  # Add grey rectangle for SEM range
+  # geom_rect(aes(xmin = as.numeric(VisitDay) - 0.4, xmax = as.numeric(VisitDay) + 0.4,
+  #               ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+  #           fill = "grey", alpha = 0.3) +
+  xlab("Day") + ylab("Inhibition (%)") +
+  scale_y_continuous(breaks = seq(80, 140, by = 10)) +
+  facet_wrap(~ ID) +
+  theme_grey() +
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1)) #+
+  # geom_errorbar(width = 0.2) +
+  # # Add error bars representing the MDC
+  # geom_errorbar(aes(ymin = Ave_RMT_Change - MDC, ymax = Ave_RMT_Change + MDC), width = 0.3, color = "red", linetype = "dashed")
+
+# Print the plot
+print(plot)
+
+# not working properly.....
+
+# Add grey rectangle for SEM range
+plot_t <- plot + geom_rect(aes(xmin = 1 - 0.4, xmax = 1 + 0.4,
+                ymin = Ave_RMT_Change[1] - 5.28, ymax = Ave_RMT_Change[1] + 5.28),
+            fill = "grey", alpha = 0.3)
+
+# adding box plot
+
+# Assuming df_avg is your dataframe and sd_by_individual already includes MDC and SEM calculations
+
+# Step 1: Filter the data for Baseline D1 (BSL D1) values only
+baseline_data <- df1 %>%
+  filter(Test %in% c('tSICIp'), VisitDay %in% c('BSL D1 ','BSL D2 '), ISI_ms == 2.5) %>%
+  select(ID, Onset_Cx, Time, Value_MSO)  # Select relevant columns
+
+# Step 2: Calculate SEM for each ID and Onset_Cx group
+baseline_summary <- baseline_data %>%
+  group_by(ID, Onset_Cx) %>%
+  summarize(
+    SEM = sd(Value_MSO, na.rm = TRUE) / sqrt(n()),  # SEM calculation
+    Ave_Value_MSO = median(Value_MSO, na.rm = TRUE),
+    Q1 = quantile(Value_MSO, 0.25, na.rm = TRUE),
+    Q3 = quantile(Value_MSO, 0.75, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Step 3: Create the plot using geom_point and geom_errorbar
+plot_sem_indiv <- ggplot(baseline_summary, aes(x = Onset_Cx, y = Ave_Value_MSO, color = Onset_Cx)) +
+  
+  # Add points for the median values (Ave_Value_MSO)
+  geom_point(size = 3, shape = 16) +
+  
+  # Add error bars for SEM
+  geom_errorbar(aes(ymin = Ave_Value_MSO - SEM, ymax = Ave_Value_MSO + SEM),
+                width = 0.2, color = "black", size = 1) +
+  
+  # Customization
+  labs(x = "Onset Cx", y = "Ave_MSO (Baseline D1)") +
+  facet_wrap(~ ID) +  # Facet by ID
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14)
+  )
+
+
+# Print the box plot
+print(plot_sem_indiv)
+
+# Step 3: Add points for Non-Onset and Onset to plot2
+plot2 <- plot2 +
+  geom_point(data = baseline_summary %>% filter(Onset_Cx == "Onset"), 
+             aes(x = "BSL D1", y = Ave_RMT_Change), 
+             color = "red", size = 4, shape = 16) +  # Onset point
+  geom_errorbar(data = baseline_summary %>% filter(Onset_Cx == "Onset"), 
+                aes(x = "BSL D1", ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+                width = 0.2, color = "red", size = 1) +
+  geom_point(data = baseline_summary %>% filter(Onset_Cx == "Non-Onset"), 
+             aes(x = "BSL D2", y = Ave_RMT_Change), 
+             color = "blue", size = 4, shape = 16) +  # Non-Onset point
+  geom_errorbar(data = baseline_summary %>% filter(Onset_Cx == "Non-Onset"), 
+                aes(x = "BSL D2", ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+                width = 0.2, color = "blue", size = 1)
+
+## old...
+# Step 2: Calculate SEM for each ID and Onset_Cx group
+baseline_summary <- baseline_data %>%
+  group_by(ID, Onset_Cx) %>%
+  summarize(
+    SEM = sd(Value_MSO, na.rm = TRUE) / sqrt(n()),  # SEM calculation
+    Ave_Value_MSO = median(Value_MSO, na.rm = TRUE),
+    Q1 = quantile(Value_MSO, 0.25, na.rm = TRUE),
+    Q3 = quantile(Value_MSO, 0.75, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Step 3: Create the box plot
+box_plot <- ggplot(baseline_summary, aes(x = 1, y = Ave_Value_MSO, fill = Onset_Cx)) +
+  geom_boxplot(aes(lower = Q1, upper = Q3, middle = Ave_Value_MSO), stat = "identity", width = 0.6) +
+  # Add error bars for SEM
+  geom_errorbar(aes(ymin = Ave_Value_MSO - SEM, ymax = Ave_Value_MSO + SEM),
+                width = 0.2, color = "black", size = 1) +
+  # Customization
+  labs(x = "VisitDay", y = "Ave_MSO (Baseline Ave)") +
+  facet_wrap(~ ID) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14)
+  )
+
+# Print the box plot
+print(box_plot)
+
+
+# ----------------------------------------
+# PLOT of SICI - ave of ISIs
+# .............Use the PMs for TXs...
+# ----------------------------------------
+
+
+plot_data <- df1 %>% 
+  filter(Time %in% c('PM')) %>% # Onset_Cx_side
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%    # Onset_Cx  
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  # filter(Visit_day %in% c('0_avg', '1_tx_day1','1_tx_day3','1_tx_day5','2_out_avg','3_fu_avg')) %>% # Onset_Cx_side
+  group_by(ID, VisitDay, L_or_R_cx) %>% #Onset_Cx
+  summarise(Ave_Diff = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) 
+
+
+# # doing above to df1 now...
+# 
+# df$VisitDay <- as.character(df$VisitDay)  # Convert factor to character
+# 
+# # Remove "LCX ", "RCX ", "AM", and "PM"
+# df$VisitDay <- gsub("LCX |RCX |AM|PM", "", df$VisitDay)
+# 
+# # Convert back to factor (if needed)
+# df$VisitDay <- as.factor(df$VisitDay)
+# 
+# # Check unique values to confirm changes
+# unique(df$VisitDay)
+
+
+# plot plot_data <- L_or_R_cx
+# NEED TO REDO for ONSET COrtex
+plot1 <- df_avg %>% #plot_data %>% was df # was working df1
+  filter(Time %in% c('PM')) %>% # Onset_Cx
+  # filter(ISI_ms %in% c(2.5)) %>%
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%    # Onset_Cx  
+  # average over 2.5 and 3 or just 2.5
+  filter(ISI_ms %in% c(3)) %>%
+  group_by(ISI_ms, ID, VisitDay, L_or_R_cx) %>% #Onset_Cx
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)
+            ) %>%
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=VisitDay,y=Ave_RMT_Change, 
+             ymin = Ave_RMT_Change-Ave_SD, ymax = Ave_RMT_Change+Ave_SD, 
+             group_by = L_or_R_cx, color = L_or_R_cx)) +
+  # add a line to mark the baseline
+  geom_rect(aes(xmin = 0.3, xmax = 2.6, ymin = -Inf, ymax = Inf), 
+            fill = "lightgrey", alpha = 0.06, color = NA) + 
+  geom_line(aes(y = Ave_RMT_Change, group = L_or_R_cx, color = L_or_R_cx)) +
+  geom_point() +
+  annotate("text", x = 1.5, y = 140, label = "Baseline", size = 5) +  # Add text at (1.5, 140)
+  xlab("Day") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  # scale_x_discrete(labels=c("B1", "B2","d1", "d5", "w3", "w5", "w7","w9", "w12","w16","w20","w24")) +
+  # scale_y_continuous(breaks=seq(-20,40,by=10)) +
+  scale_y_continuous(breaks=seq(80,120,by=10)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot1 <- plot1 + geom_errorbar(width = 0.2)
+
+
+# STYLE OPTIONS
+# plot + theme(legend.position = c(0.9, 0.3))
+# 
+# plot + geom_rect(aes(xmin = 2, xmax = 3, ymin = -Inf, ymax = Inf), 
+#             fill = "lightgrey", alpha = 0.2) +  # Highlight area between x = 2 and x = 3
+#   theme_minimal()
+
+
+# Create the OUTPUT directory if it doesn't exist
+if (!dir.exists("4.Output")) {
+  dir.create("4.Output")
+}
+
+
+# Save as PDF (Portrait)
+ggsave("4.Output/Q2_tSICI_3.pdf", plot = plot1, width = 11, height = 8.5, units = "in")
+
+# Save as PNG
+ggsave("4.Output/Q2_tSICI_3.png", plot = plot1, width = 10, height = 8, dpi = 300)
+
+# 201 --> L onset, LL
+# 202 --> NA R onset, Bulbar
+# 203 --> R onset, UL
+# 204 --> L onset, UL
+# 205 --> L onset, UL
+
+# need to add SEMs for individual SICI Data!!
+
+#### -------------------------------
+# SICI Plot 2
+#      with average over 2.5 and 3 ISI
+#      PM only
+#------------------------------------------------
+
+
+plot2 <- df1 %>% #plot_data %>% 
+  filter(Time %in% c('PM')) %>% # Onset_Cx
+  select(c('ID','Onset_Cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%    # Onset_Cx  
+  # average over 2.5 and 3 or just 2.5
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  group_by(ID, VisitDay, Onset_Cx) %>% #Onset_Cx
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE), 
+            SEM = sd(Value_MSO, na.rm = TRUE) / sqrt(n())) %>% # SEM calculation
+  ggplot(aes(x=VisitDay,y=Ave_RMT_Change, ymin = Ave_RMT_Change-Ave_SD, ymax = Ave_RMT_Change+Ave_SD, group_by = Onset_Cx, color = Onset_Cx)) +
+  # add a horozontal loine for 100
+  # geom_hline(yintercept = 100, linetype = "dashed", color = "black") +  # Add dashed line at y = 100
+  # add a line to mark the baseline
+  geom_rect(aes(xmin = 0.3, xmax = 2.6, ymin = -Inf, ymax = Inf), 
+            fill = "lightgrey", alpha = 0.03, color = NA) + 
+  geom_line(aes(y = Ave_RMT_Change, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point() +
+  geom_errorbar(aes(x = VisitDay[1:2], ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+                width = 0.2,size = 1) +
+  annotate("text", x = 1.5, y = 140, label = "Baseline", size = 5) +  # Add text at (1.5, 140)
+  xlab("Day") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  # scale_x_discrete(labels=c("B1", "B2","d1", "d5", "w3", "w5", "w7","w9", "w12","w16","w20","w24")) +
+  # scale_y_continuous(breaks=seq(-20,40,by=10)) +
+  scale_y_continuous(breaks=seq(80,120,by=10)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# plot2 <- plot2 + geom_errorbar(width = 0.2)
+# 
+# plot2 <- plot2 + geom_errorbar(data = df1 %>% filter(Onset_Cx == "Onset"), 
+#                 aes(x = "BSL D1", ymin = Ave_RMT_Change - SEM, ymax = Ave_RMT_Change + SEM),
+#                 width = 0.2, color = "red", size = 1)
+#    
+
+# # Step 3: Add points for Non-Onset and Onset to plot2
+# plot_comb <- 
+#   geom_point(data = baseline_summary %>% filter(Onset_Cx == "Onset"), 
+#              aes(x = "BSL D1", y = Ave_Value_MSO), 
+#              color = "red", size = 4, shape = 16) +  # Onset point
+#   geom_errorbar(data = baseline_summary %>% filter(Onset_Cx == "Onset"), 
+#                 aes(x = "BSL D1", ymin = Ave_Value_MSO - SEM, ymax = Ave_Value_MSO + SEM),
+#                 width = 0.2, color = "red", size = 1) +
+#   geom_point(data = baseline_summary %>% filter(Onset_Cx == "Non-Onset"), 
+#              aes(x = "BSL D2", y = Ave_Value_MSO), 
+#              color = "blue", size = 4, shape = 16) +  # Non-Onset point
+#   geom_errorbar(data = baseline_summary %>% filter(Onset_Cx == "Non-Onset"), 
+#                 aes(x = "BSL D2", ymin = Ave_Value_MSO - SEM, ymax = Ave_Value_MSO + SEM),
+#                 width = 0.2, color = "blue", size = 1)
+
+# Trying Mega plot cimbined again...
+
+
+
+# ------------------------------------
+# Save as PDF (Portrait)
+ggsave("4.Output/Q2_tSICI_SEM.pdf", plot = plot2, width = 11, height = 8.5, units = "in")
+
+
+# Save as PNG
+ggsave("4.Output/Q2_tSICI_SEM.png", plot = plot2, width = 10, height = 8, dpi = 300)
+
+#### -------------------------------
+# SICI Plot 3
+#      with average over 2.5 and 3 ISI
+#      and including AM and PM
+#------------------------------------------------
+
+
+# plot plot_data <- L_or_R_cx
+plot3 <- df %>% #plot_data %>% 
+  # filter(Time %in% c('PM')) %>% # Onset_Cx_side
+  # filter(ISI_ms %in% c(2.5)) %>%
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms', 'Time')) %>%    # Onset_Cx  
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  group_by(ID, VisitDay, L_or_R_cx, Time) %>% #Onset_Cx # remove ISI and Time to average across it
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)
+            ) %>%
+  ggplot(aes(x=VisitDay,y=Ave_RMT_Change, ymin = Ave_RMT_Change-Ave_SD, ymax = Ave_RMT_Change+Ave_SD, 
+             group = interaction(L_or_R_cx, Time),  # Ensure Time is in the group, 
+             color = L_or_R_cx, 
+             shape = Time, 
+             linetype = Time)) +
+  # add a line to mark the baseline 
+  geom_rect(aes(xmin = 2.3, xmax = 2.7, ymin = -Inf, ymax = Inf), 
+            fill = "lightgrey", alpha = 0.05, color = NA) + 
+  geom_line(size = 1) +  # Line size for visibility
+  geom_point(size = 2) +  # Make points more visible
+  xlab("Day") + 
+  ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_linetype_manual(values = c("AM" = "solid", "PM" = "dotted")) +  # AM solid, PM dotted
+  scale_shape_manual(values = c("AM" = 16, "PM" = 17)) +  # AM = solid circle, PM = triangle
+  scale_y_continuous(breaks=seq(80,120,by=10)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot3 <- plot3 + geom_errorbar(width = 0.2)
+
+# Save as PDF (Portrait)
+ggsave("4.Output/Q2_tSICI_AM_PM.pdf", plot = plot3, width = 11, height = 8.5, units = "in")
+
+# Save as PNG
+ggsave("4.Output/Q2_tSICI_AM_PM.png", plot = plot3, width = 10, height = 8, dpi = 300)
+
+                    
+
+
+#### -------------------------------
+# SICI Plot 4 - Individual ISI - selected by baseline highest SICI???
+#      with interaction 2.5 and 3 ISI
+#      PM only
+#------------------------------------------------
+
+
+# plot plot_data <- L_or_R_cx
+plot4 <- df %>% #plot_data %>% 
+  filter(Time %in% c('PM')) %>% # Onset_Cx_side
+  # filter(ISI_ms %in% c(2.5)) %>%
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%    # Onset_Cx  
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  mutate(ISI_ms = as.factor(ISI_ms)) %>%
+  group_by(ID, VisitDay, L_or_R_cx, ISI_ms) %>% #Onset_Cx # remove ISI and Time to average across it
+  summarise(Ave_RMT_Change = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)
+            ) %>%
+  ggplot(aes(x=VisitDay,y=Ave_RMT_Change, ymin = Ave_RMT_Change-Ave_SD, ymax = Ave_RMT_Change+Ave_SD, 
+             group = interaction(L_or_R_cx, ISI_ms),  # Ensure Time is in the group, 
+             color = L_or_R_cx, 
+             shape = ISI_ms, 
+             linetype = ISI_ms)) +
+  # add a line to mark the baseline 
+  geom_rect(aes(xmin = 2.3, xmax = 2.7, ymin = -Inf, ymax = Inf), 
+            fill = "lightgrey", alpha = 0.06, color = NA) + 
+  geom_line(size = 1) +  # Line size for visibility
+  geom_point(size = 2) +  # Make points more visible
+  xlab("Day") + 
+  ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_linetype_manual(values = c("2.5" = "solid", "3" = "dotted")) +  # AM solid, PM dotted
+  scale_shape_manual(values = c("2.5" = 16, "3" = 17)) +  # AM = solid circle, PM = triangle
+  scale_y_continuous(breaks=seq(80,120,by=10)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot4 <- plot4 + geom_errorbar(width = 0.2)
+
+# Save as PDF (Portrait)
+ggsave("4.Output/Q2_tSICI_by_ISI.pdf", plot = plot4, width = 11, height = 8.5, units = "in")
+
+# Save as PNG
+ggsave("4.Output/Q2_tSICI_by_ISI.png", plot = plot4, width = 10, height = 8, dpi = 300)
+
+     
+# BELOW NOT TESTED YET....
+
+## ------------------------------------
+#
+# Joining plots in a pdf
+#
+## ------------------------------------
+
+# Open PDF file
+pdf("4.Output/Q2_TMS_SICI_combined_plots.pdf", width = 8, height = 10)
+
+# Print each plot on a new page
+print(plot1)  # Page 1
+print(plot2)  # Page 2
+print(plot3)  # Page 3
+
+# Close the PDF file
+dev.off()
+
+## ------------------------------------
+#
+# Joining plots in a pdf
+#
+## ------------------------------------
+
+library(ggplot2)
+library(gridExtra)
+
+# Open a PDF file to save plots
+pdf("OUTPUT/combined_plots.pdf", width = 8, height = 10)
+
+# Print each plot to the PDF
+grid.arrange(plot1, plot2, plot3, ncol = 1)  # Arranges plots vertically
+
+# Close the PDF device
+dev.off()
+
+## ------------------------------------
+#
+# Joining plots in a pdf
+#
+## ------------------------------------
+
+
+library(patchwork)
+
+# Combine plots
+combined_plot <- plot1 / plot2 / plot3  # Stack plots vertically
+
+# Save as PDF
+ggsave("OUTPUT/combined_plots.pdf", plot = combined_plot, width = 8, height = 10)
+
+```
+## SICI plot - interim analysis
+Notes:
+201 - TX D5 - missing value for tSICI 2.5. Not in excel...
+Nans in Data, remove
+
+
+```{r plot_SICI_Q2, echo=FALSE}
+
+# Make new data for average of baselines!!!
+
+# go back and ermove LX and RX from Visit Day variable
+# 
+# df2 <- df %>% 
+#   select(c('ID','L_or_R_cx', 'VisitDay', 'Time', 'Value_MSO', 'ISI_ms')) %>%      
+#   filter(ISI_ms %in% c(2.5, 3)) %>%
+#   filter(Time %in% c('PM')) %>% # Onset_Cx_side
+#   filter(!VisitDay %in% c('BSL D2 PM','BSL D2 PM')) %>%
+#   group_by(ID, VisitDay, L_or_R_cx) %>% #Onset_Cx_side
+#   summarise(Ave_Diff = ave(Value_MSO),
+#             Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+#   # Ungroup to return to a normal data frame
+#   ungroup()
+
+# New attempt -- #Onset_Cx
+
+Value_MSO
+
+plot_data <- df %>%
+  filter(Time %in% c("PM")) %>%
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%       #Onset_Cx
+  filter(ISI_ms %in% c(2.5)) %>%
+  # filter(!VisitDay %in% c('001_BSL D1 PM','001_BSL D2 PM')) %>%
+  group_by(ID, L_or_R_cx, VisitDay) %>% #Onset_Cx
+  dplyr::summarize(Ave_MSO = mean(Value_MSO, na.rm = TRUE), sd_MSO = sd(Value_MSO, na.rm = TRUE)) 
+
+
+  # # filter(VisitDay %in% c("00_1_BSL DAY1 AM", "00_2_BSL DAY2 AM", "00_1_BSL DAY1 PM", "00_2_BSL DAY2 PM")) %>%
+  # summarise(Ave_Diff = ave(Value_MSO),
+  #           Ave_SD = sd(Value_MSO, na.rm = TRUE)) %>%
+  # # Ungroup to return to a normal data frame
+  # ungroup()
+
+
+  # mutate(
+  #   VisitDay = case_when(
+  #     all(c("00_1_BSL_DAY1_AM", "00_2_BSL DAY2 AM") %in% VisitDay) ~ "00_BSL_AM_AVE",
+  #     all(c("00_1_BSL_DAY1_PM", "00_2_BSL DAY2 PM") %in% VisitDay) ~ "00_BSL_PM_AVE",
+  #     TRUE ~ VisitDay
+  #   )
+  # ) %>%
+  # # Group by the ID and VisitDay to calculate the average of TotalPulses
+  # group_by(ID, VisitDay) %>%
+  # mutate(Value_MSO = if_else(
+  #   VisitDay %in% c("00_BSL_AM_AVE", "00_BSL_PM_AVE"),
+  #   mean(Value_MSO, na.rm = TRUE),
+  #   Value_MSO
+  # )) %>%
+  # # Ungroup to return to a normal data frame
+  # ungroup()
+
+  
+# head(df2)
+
+  # filter(Visit_day %in% c('0_avg', '1_tx_day1','1_tx_day3','1_tx_day5','2_out_avg','3_fu_avg')) %>% #
+    
+# plot
+
+plot2 <- plot_data %>% 
+  group_by(ID, VisitDay, Onset_Cx) %>% #Onset_Cx
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=VisitDay,y=Ave_MSO, ymin = Ave_MSO-sd_MSO, ymax = Ave_MSO+sd_MSO, group_by = Onset_Cx, colour = Onset_Cx)) +
+  geom_line(aes(y = Ave_MSO, group = Onset_Cx, color = Onset_Cx)) +
+  geom_point(aes(y = Ave_MSO, group = Onset_Cx, color = Onset_Cx)) +
+  xlab("Day") + ylab("Inhibition (%MSO)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("B_1","B_2","D1", "'D5","W3","W7","W9","W12","W16","W20","W24")) +
+  scale_y_continuous(breaks=seq(-20,30,by=5)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + #theme_classic theme_grey
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+
+plot2 + geom_errorbar(width = 0.2)
+# 
+# plot_data %>% distinct(VisitDay)
+    
+```
+
+## SICI Plot - SAS style 
+
+```{r plot_SICI_LP, echo=FALSE}
+
+df2 <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+  select(c('ID','L_or_R_cx', 'Visit_day', 'Diff_percent', 'ISI_ms')) %>%      
+  filter(ISI_ms %in% c(2.5, 3)) %>%
+  filter(Visit_day %in% c('0_avg','2_out_avg','3_fu_avg')) %>% # Onset_Cx_side # make these inline!!
+  group_by(ID, Visit_day, L_or_R_cx) %>% #Onset_Cx_side
+  summarise(Ave_Diff = ave(Diff_percent),
+            Ave_SD = sd(Diff_percent, na.rm = TRUE)) 
+
+# plot
+
+plot2 <- df2 %>% 
+  group_by(ID, Visit_day, L_or_R_cx) %>% #Onset_Cx_side
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=Visit_day,y=Ave_Diff, ymin = Ave_Diff-Ave_SD, ymax = Ave_Diff+Ave_SD, group_by = L_or_R_cx, colour = L_or_R_cx)) +
+  geom_line(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  geom_point(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  xlab("Day") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_x_discrete(labels=c("B","d8","d22")) +
+  scale_y_continuous(breaks=seq(-20,30,by=5)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + #theme_classic theme_grey
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+
+plot2 + geom_errorbar(width = 0.2)
+
+    
+```
+
+
+### Check to see if plot matches Liane's 
+
+
+```{r indiv_plots_SICI, echo=TRUE}
+
+plot_data <- df1 %>% 
+  filter(Test %in% c('tSICIp')) %>% # Onset_Cx_side
+  select(c('ID','L_or_R_cx', 'VisitDay', 'Value_MSO', 'ISI_ms')) %>%      
+  filter(VisitDay %in% c('BSL D1 PM')) %>% # Onset_Cx_side
+  group_by(ID, L_or_R_cx, ISI_ms) %>% #Onset_Cx_side
+  summarise(Ave_Diff = mean(Value_MSO),
+            Ave_SD = sd(Value_MSO, na.rm = TRUE)) 
+
+# plot 
+plot <- plot_data %>% 
+  group_by(ID, ISI_ms, L_or_R_cx) %>% #Onset_Cx_side
+  # summarise(Ave_Diff = ave(Diff_percent)) %>% 
+  # mutate(name = fct_relevel(Visit_day, 
+  #           "north", "north-east", "east", 
+  #           "south-east", "south", "south-west", 
+  #           "west", "north-west")) 
+  ggplot(aes(x=ISI_ms,y=Ave_Diff, ymin = Ave_Diff-Ave_SD, ymax = Ave_Diff+Ave_SD, group_by = L_or_R_cx, colour = L_or_R_cx)) +
+  geom_line(aes(y = Ave_Diff, group = L_or_R_cx, color = L_or_R_cx)) +
+  geom_point() +
+  xlab("ISI") + ylab("Inhibition (%)") + #Change in Machine Intensity
+  scale_y_continuous(breaks=seq(-20,100,by=20)) +
+  facet_wrap( ~ ID) +
+  theme_grey() + # theme_classic2
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        strip.text=element_text(size=14))
+        
+# plot + geom_errorbar(width = 0.2)
+plot
+
+    
+```
+
+### Questions for Liane:
+
+Which days correspond to day  8 and day 22?
+
+What is the average measures in timeline?
+
+Why am I not getting both sides??
+
+Which subject numbers correspond to which?
+
+
+# SICI Stats - TBC
+
+# SICF Plot - TBC
+
+# SICF Stats - TBC
+
+# RMT - TBC
